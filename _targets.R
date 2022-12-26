@@ -24,12 +24,13 @@ tar_source()
 
 # Replace the target list below with your own:
 list(
-  tar_target(
-    name = mainstems_v0.1,
-    command = get_mainstems_db(v = "v0.1")
-  ),
-  tar_target(
-    name = mainstems,
-    command = make_mainstems(mainstems_v0.1, "out/mainstems.gpkg")
-  )
+  tar_target(name = registry_file, command = "registry/ref_rivers.csv", format = "file"),
+  tar_target(name = provider_file, command = "registry/providers.csv", format = "file"),
+  tar_target(name = mainstems_v0.1, command = get_mainstems_db(v = "v0.1")),
+  tar_target(name = mainstems, command = make_mainstems(mainstems_v0.1, 
+                                                        "out/mainstems.gpkg")),
+  tar_target(name = registry, command = build_registry(mainstems, 
+                                                       registry = registry_file,
+                                                       providers = provider_file)),
+  tar_target(name = write_reg, command = write_registry(registry, registry_file))
 )
