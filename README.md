@@ -1,14 +1,14 @@
 # Reference Rivers for geoconnex.us
 
-# *NOTE: the contents of this readme are a working draft community contribution is being sought to form the strategy detailed here.*
-
 This repository houses workflow software for compilation of community reference river features. The output of this workflow will generate Persistent Identifiers for the [geoconnex.us system](https://github.com/internetofwater/geoconnex.us), reference landing page content for the [reference.geoconnex.us system](https://reference.geoconnex.us/), and be used as the basis for persistence in the  [Network Linked Data Index](https://labs.waterdata.usgs.gov/about-nldi/index.html).
 
 The base dataset that has informed this work so far can be found in the "mainstem summary gpkg" file associated with this data release:
 
 > Blodgett, D.L., 2022, Mainstem Rivers of the Conterminous United States: U.S. Geological Survey data release, https://doi.org/10.5066/P9BTKP3T. 
 
-v1.0 of the above dataset was used for initial release of mainstems. A v1.1  of the above dataset was incorporated when this workflow repository was instantiated (December, 2022). [NEWS.md](NEWS.md) will be used for all future modifications.
+v1.0 of the above dataset was used for initial release of mainstems. A v2.0  of the above dataset was incorporated when this workflow repository was instantiated (December, 2022). [NEWS.md](NEWS.md) will be used for all future modifications.
+
+> David L Blodgett, 2023, Mainstem Rivers of the Conterminous United States (version 2.0): U.S. Geological Survey data release, https://doi.org/10.5066/P92U7ZUT. 
 
 # Reference mainstem river strategy
 
@@ -16,7 +16,7 @@ The intention of the collection of mainstem river identifiers created by the wor
 
 See ["Progress Toward a Reference Hydrologic Geospatial Fabric for the United States"](https://waterdata.usgs.gov/blog/hydrofabric/) for background on the work that has led to the creation of this work. Complete background on the Mainstems data model can be found here:
 
-> Blodgett, D., Johnson, J.M., Sondheim, M., Wieczorek, M., and Frazier, N., 2021, Mainstems: A logical data model implementing mainstem and drainage basin feature types based on WaterML2 Part 3: HY Features concepts: Environmental Modelling &amp; Software, v. 135, p. 104927, https://doi.org/10.1016/j.envsoft.2020.104927. 
+> Blodgett, D., Johnson, J.M., Sondheim, M., Wieczorek, M., and Frazier, N., 2021, Mainstems: A logical data model implementing mainstem and drainage basin feature types based on WaterML2 Part 3: HY Features concepts: Environmental Modelling & Software, v. 135, p. 104927, https://doi.org/10.1016/j.envsoft.2020.104927. 
 
 ## Summary
 
@@ -67,6 +67,10 @@ In practice, these urls will look like:
 1. `https://labs.waterdata.usgs.gov/api/nldi/linked-data/comid/21412883/navigation/UM/flowlines?distance=9999&f=json` (which is the NLDI upstream mainstem navigation starting from the outlet of the reference river.)
 
 It is important to maintain this separation because no one organization, other than a community organization set up to fulfill this role, can be expected to be both the community reference catalog and a provider of their own information.  
+
+# What is the identifier for a mainstem?
+
+The integer at the end of a URL such as: `https://geoconnex.us/ref/mainstems/29559` is a unique integer derived from the "level path id" of the dataset that originated the mainstem system. It should not be interpreted as having any particular structure and will not function as a levelpath id in any context other than the original dataset.
 
 # Project structure
 
