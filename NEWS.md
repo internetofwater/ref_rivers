@@ -6,8 +6,8 @@ This is a unique update that is being applied in a pragmatic and situationally s
 The second release of reference mainstems is a minor update in which 
 
 - 33564 will now reference a new reference data release
-- 161 mainstems have been superseded, 
-- 23 have been identified as in error and will not appear in the reference mainstems lookup table, and  
+- 161 mainstems have been superseded because the outlet from a given headwater has moved significantly, 
+- 23 mainstem headwaters have been identified to no longer be headwaters and will be superseded,
 - 105 have been identified as the same with a slightly different outlet location.
 
 A new version of the v1.0 source data was used for this release. 
@@ -24,7 +24,7 @@ Updates to the registry will be applied for all mainstems. Categories of change 
 
 1. the 33564 will be updated in place to now indicate that the Version 2.0 network at https://doi.org/doi:10.5066/P976XCVT is now the connecting network that should be used for that mainstem.
 1. the 161 superseded mainstems will not be altered but new mainstems will be added and the old ones will be linked to their replacement(s) in the mainstem lookup table published via geoconnex.us. 
-1. the 23 that are in error had empty geometry and have not been used. They will remain and no longer appear in the mainstem lookup table.
+1. the 23 that are in error had empty geometry and have not been used. They will remain in the registry and no longer appear in the mainstem lookup table.
 1. the 105 with new outlets will not be altered but will have a new row in the registry with the new outlet.
 
 reference mainstems v1.0
