@@ -1,4 +1,4 @@
-reference mainstems v1.1
+reference mainstems v2
 ========================
 
 This is a unique update that is being applied in a pragmatic and situationally specific way. Future updates will likely be very different as they will involve inclusion of a new connecting network and addition of additional mainstem identifiers.
@@ -27,7 +27,7 @@ Updates to the registry will be applied for all mainstems. Categories of change 
 1. the 23 that are in error had empty geometry and have not been used. They will remain in the registry and no longer appear in the mainstem lookup table.
 1. the 105 with new outlets will not be altered but will have a new row in the registry with the new outlet.
 
-reference mainstems v1.0
+reference mainstems v1
 ========================
 
 The initial release of the mainstems registry was created from v1 of:
