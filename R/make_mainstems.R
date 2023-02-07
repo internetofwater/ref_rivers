@@ -1,9 +1,9 @@
 # to run interactively, use:
-# old_ms <- tar_read("mainstems_v1")
-# new_ms <- tar_read("mainstems_v2")
-# old_net <- tar_read("enhd_v1")
-# new_net <- tar_read("enhd_v2")
-# changes <- tar_read("reconciled_mainstems")
+old_ms <- tar_read("mainstems_v1")
+new_ms <- tar_read("mainstems_v2")
+old_net <- tar_read("enhd_v1")
+new_net <- tar_read("enhd_v2")
+changes <- tar_read("reconciled_mainstems")
 
 make_mainstems <- function(old_ms, new_ms, old_net, new_net, changes, out_f) {
   old_ms <- sf::read_sf(old_ms)
@@ -97,8 +97,11 @@ make_mainstems <- function(old_ms, new_ms, old_net, new_net, changes, out_f) {
   # get match_no_match into a list column format
   nm <- sapply(split(match_no_match$new_mainstemid, 
                      match_no_match$mainstem_id), function(x) {
-                      o <- x[!is.na(x)]
-                      if(length(o) == 0) NA else o })
+                       o <- x[!is.na(x)]
+                       if(length(o) == 0) { NA } else {
+                         paste0("['", paste(o, collapse = "', '"), "']") 
+                       } })
+  
   match_no_match <- data.frame(mainstem_id = as.integer(names(nm)), 
                                new_mainstemid = I(nm))
   
@@ -110,19 +113,29 @@ make_mainstems <- function(old_ms, new_ms, old_net, new_net, changes, out_f) {
     
   ms_out <- bind_rows(ms_out, superseded)
   
-  if(!all(orig_ms$LevelPathI %in% ms_out$mainstem_id)) stop("must include all historic mainstem ids")
-  
-  if(any(!ms_out$superseded & is.na(ms_out$new_levelpathi))) stop("non-superseded mainstems must exist on new network")
+  # do some checks
+  # make sure we have all the original mainstem ids
+  if(!all(orig_ms$LevelPathI %in% ms_out$mainstem_id)) 
+    stop("must include all historic mainstem ids")
+  # Make sure all out non superseded have new_levelpathi for network
+  if(any(!ms_out$superseded & is.na(ms_out$new_levelpathi))) 
+    stop("non-superseded mainstems must exist on new network")
 
+  # add downstream mainstem (for downstream waterbody mapping)
   new_dm <- filter(new_dm, !levelpathi == dnlevelpat)
-  id_map <- distinct(select(sf::st_drop_geometry(filter(ms_out, !superseded)), new_levelpathi, down_mainstem_id = mainstem_id))
+  id_map <- distinct(select(sf::st_drop_geometry(filter(ms_out, !superseded)), 
+                            new_levelpathi, down_mainstem_id = mainstem_id))
+  
   ms_out <- left_join(ms_out, new_dm, by = c("new_levelpathi" = "levelpathi")) |>
     left_join(id_map, 
-              by = c("dnlevelpat" = "new_levelpathi"))
-    
+              by = c("dnlevelpat" = "new_levelpathi")) |>
+    select(-dnlevelpat, -new_levelpathi) |>
+    mutate(levelpathi = mainstem_id, dnlevelpat = ifelse(is.na(down_mainstem_id), 0, down_mainstem_id)) |>
+    add_dm()
+  
   ms_out <- ms_out |>
     mutate(uri = paste0("https://geoconnex.us/ref/mainstems/", mainstem_id), 
-           type = "https://www.opengis.net/def/schema/hy_features/hyf/HY_FlowPath",
+           type = "['https://www.opengis.net/def/schema/hy_features/hyf/HY_FlowPath', 'https://www.opengis.net/def/schema/hy_features/hyf/HY_WaterBody']",
            name_at_outlet = outlet_GNIS_NAME,
            name_at_outlet_gnis_id = outlet_GNIS_ID,
            downstream_mainstem_id = ifelse(!is.na(down_mainstem_id), 
@@ -140,10 +153,11 @@ make_mainstems <- function(old_ms, new_ms, old_net, new_net, changes, out_f) {
            outlet_drainagearea_sqkm = round(totdasqkm, digits = 1),
            new_mainstemid = sapply(unname(new_mainstemid), paste, collapse = ", "),
            superseded = ifelse(is.na(superseded), FALSE, superseded)) |>
-    mutate(new_mainstemid = ifelse(new_mainstemid == "", NA, new_mainstemid)) |>
+    mutate(new_mainstemid = unname(ifelse(new_mainstemid == "", NULL, new_mainstemid))) |>
     select(id = mainstem_id, uri,
            featuretype = type,
            downstream_mainstem_id,
+           encompassing_mainstem_basins = down_levelpaths,
            name_at_outlet, 
            name_at_outlet_gnis_id, 
            head_nhdpv2_COMID, outlet_nhdpv2_COMID, 
@@ -151,7 +165,7 @@ make_mainstems <- function(old_ms, new_ms, old_net, new_net, changes, out_f) {
            lengthkm, outlet_drainagearea_sqkm,
            head_rf1ID, outlet_rf1ID, 
            head_nhdpv1_COMID, outlet_nhdpv1_COMID, 
-           head_latestHUC12, outlet_latestHUC12,
+           head_2020HUC12, outlet_2020HUC12,
            superseded, new_mainstemid) %>%
     mutate(id = as.character(id))
   
@@ -160,4 +174,38 @@ make_mainstems <- function(old_ms, new_ms, old_net, new_net, changes, out_f) {
   sf::write_sf(ms_out, out_f)
   
   ms_out
+}
+
+add_dm <- function(network) {
+  
+  lp <- select(network, levelpathi, dnlevelpat) %>%
+    filter(levelpathi != dnlevelpat)
+  
+  dnlp <- data.frame(lp = seq(0, (max(lp$levelpathi)))) %>%
+    left_join(lp, by = c("lp" = "levelpathi"))
+  
+  dnlp <- dnlp$dnlevelpat[2:nrow(dnlp)]
+  
+  get_dlp <- function(x, dnlp) {
+    out <- dnlp[x]
+    
+    if(out == 0) {
+      return()
+    }
+    
+    c(out, get_dlp(out, dnlp))
+    
+  }
+  
+  all_lp <- pbapply::pblapply(unique(lp$levelpathi), get_dlp, dnlp = dnlp)
+  
+  all_lp <- data.frame(levelpathi = unique(lp$levelpathi),
+                       dnlp = sapply(all_lp, function(x) if(length(x) > 0) {
+                         paste0("['", paste(paste0("https://geoconnex.us/ref/mainstems/", x), 
+                                            collapse = "', '"), "']")
+                         } else NA))
+  
+  network %>%
+    left_join(all_lp, by = "levelpathi") %>%
+    rename(down_levelpaths = dnlp)
 }
