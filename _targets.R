@@ -46,6 +46,7 @@ list(
                                                         enhd_v2,
                                                         reconciled_mainstems,
                                                         "out/mainstems.gpkg")),
+  tar_target(name = lookup, command = write_lookups(mainstems, enhd_v2)),
   tar_target(name = registry, command = build_registry(mainstems, 
                                                        registry = registry_file,
                                                        providers = provider_file)),

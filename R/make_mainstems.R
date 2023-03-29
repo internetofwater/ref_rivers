@@ -1,9 +1,9 @@
 # to run interactively, use:
-old_ms <- tar_read("mainstems_v1")
-new_ms <- tar_read("mainstems_v2")
-old_net <- tar_read("enhd_v1")
-new_net <- tar_read("enhd_v2")
-changes <- tar_read("reconciled_mainstems")
+# old_ms <- tar_read("mainstems_v1")
+# new_ms <- tar_read("mainstems_v2")
+# old_net <- tar_read("enhd_v1")
+# new_net <- tar_read("enhd_v2")
+# changes <- tar_read("reconciled_mainstems")
 
 make_mainstems <- function(old_ms, new_ms, old_net, new_net, changes, out_f) {
   old_ms <- sf::read_sf(old_ms)
@@ -141,19 +141,19 @@ make_mainstems <- function(old_ms, new_ms, old_net, new_net, changes, out_f) {
            downstream_mainstem_id = ifelse(!is.na(down_mainstem_id), 
                                            paste0("https://geoconnex.us/ref/mainstems/", down_mainstem_id),
                                            down_mainstem_id),
-           head_nhdpv2_COMID = ifelse(is.na(head_nhdpv2_COMID), NA, 
+           head_nhdpv2_COMID = ifelse(is.na(head_nhdpv2_COMID), "", 
                                       paste0("https://geoconnex.us/nhdplusv2/comid/", head_nhdpv2_COMID)),
-           outlet_nhdpv2_COMID = ifelse(is.na(outlet_nhdpv2_COMID), NA, 
+           outlet_nhdpv2_COMID = ifelse(is.na(outlet_nhdpv2_COMID), "", 
                                         paste0("https://geoconnex.us/nhdplusv2/comid/", outlet_nhdpv2_COMID)),
-           head_nhdpv2HUC12 = ifelse(is.na(head_nhdpv2HUC12), NA, 
+           head_nhdpv2HUC12 = ifelse(is.na(head_nhdpv2HUC12), "", 
                                      paste0("https://geoconnex.us/nhdplusv2/huc12/", head_nhdpv2HUC12)),
-           outlet_nhdpv2HUC12 = ifelse(is.na(outlet_nhdpv2HUC12), NA, 
+           outlet_nhdpv2HUC12 = ifelse(is.na(outlet_nhdpv2HUC12), "", 
                                        paste0("https://geoconnex.us/nhdplusv2/huc12/", outlet_nhdpv2HUC12)),
            lengthkm = round(length, digits = 1),
            outlet_drainagearea_sqkm = round(totdasqkm, digits = 1),
-           new_mainstemid = sapply(unname(new_mainstemid), paste, collapse = ", "),
+           new_mainstemid = unname(sapply(new_mainstemid, paste, collapse = ", ")),
            superseded = ifelse(is.na(superseded), FALSE, superseded)) |>
-    mutate(new_mainstemid = unname(ifelse(new_mainstemid == "", NULL, new_mainstemid))) |>
+    mutate(new_mainstemid = ifelse(new_mainstemid == "NA", "", new_mainstemid)) |>
     select(id = mainstem_id, uri,
            featuretype = type,
            downstream_mainstem_id,
@@ -168,6 +168,8 @@ make_mainstems <- function(old_ms, new_ms, old_net, new_net, changes, out_f) {
            head_2020HUC12, outlet_2020HUC12,
            superseded, new_mainstemid) %>%
     mutate(id = as.character(id))
+  
+    ms_out <- mutate_if(ms_out, is.character, ~tidyr::replace_na(.,""))
   
   ms_out <- sf::st_transform(ms_out, 4326)
   
