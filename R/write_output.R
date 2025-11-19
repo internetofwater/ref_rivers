@@ -1,6 +1,3 @@
-tar_load("mainstems")
-tar_load("enhd_v2")
-
 write_lookups <- function(mainstems, enhd_v2) {
   enhd_v2 <- arrow::read_parquet(enhd_v2)
   
