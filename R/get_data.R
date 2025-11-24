@@ -36,6 +36,25 @@ get_mainstems_db_2 <- function() {
   ms_gpkg
 }
 
+get_mainstems_db_3 <- function() {
+  
+  # Blodgett, D.L., 2025 Mainstem Rivers of the Conterminous United States 
+  # version 3.0, July 2025): U.S. Geological Survey data release, 
+  # https://doi.org/10.5066/P13LNDDQ.
+  # https://www.sciencebase.gov/catalog/item/65cbc0b3d34ef4b119cb37e9
+  
+  ms_gpkg <- "data/mainstems/hr_mainstem_summary_v3.gpkg"
+  
+  if(!file.exists(ms_gpkg)) {
+    dir.create(dirname(ms_gpkg), recursive = TRUE, showWarnings = FALSE)
+    f <- sbtools::item_file_download("65cbc0b3d34ef4b119cb37e9", 
+                                     names = "hr_mainstem_summary_v3.gpkg", 
+                                     destinations = ms_gpkg)
+  }
+  
+  ms_gpkg
+}
+
 get_enhd_1 <- function() {
   
   # Blodgett, D.L., 2022, Updated CONUS river network attributes based on the 
@@ -84,3 +103,32 @@ join_enhd <- function(enhd_pqt, nhdp_geo) {
   select(nhdp_geo, comid = COMID) %>%
     right_join(enhd, by = "comid")
 }
+
+
+get_ref_network_1 <- function() {
+  # https://code.usgs.gov/wma/nhgf/reference-fabric/reference-network/-/packages
+  
+  ref_net_gpkg <- "data/reference_network/reference_network_1.gpkg"
+
+  if(!file.exists(ref_net_gpkg)) {
+    dir.create(dirname(ref_net_gpkg), recursive = TRUE, showWarnings = FALSE)
+    
+    ref_net_gpkg_zip <- paste0(ref_net_gpkg, ".zip")
+    
+    url <- "https://code.usgs.gov/wma/nhgf/reference-fabric/reference-network/-/package_files/17267/download"
+    sha_256 <- "1747daee3ddd5b0392018f998766ebbf93dbce96270b616b8a9c640d1ab51ebc"
+    
+    f <- httr::GET(url, httr::write_disk(ref_net_gpkg_zip))
+    
+    if(!f$status_code == 200) stop("error downloading")
+    
+    hash <- tools::sha256sum(ref_net_gpkg_zip)
+    
+    if(hash != sha_256) stop("hash doesn't match")
+    
+    zip::unzip(ref_net_gpkg_zip, junkpaths = TRUE, exdir = dirname(ref_net_gpkg))
+  }
+  
+  ref_net_gpkg
+  
+  }
