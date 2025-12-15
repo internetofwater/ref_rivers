@@ -95,6 +95,26 @@ get_enhd_2 <- function() {
   
 }
 
+get_enhd_3 <- function() {
+  
+  # David L. Blodgett, 2023, Updated CONUS river network attributes based on 
+  # the E2NHDPlusV2 and NWMv2.1 networks (version 2.0): U.S. Geological Survey 
+  # data release, https://doi.org/doi:10.5066/P976XCVT. 
+  # https://www.sciencebase.gov/catalog/item/63cb311ed34e06fef14f40a3
+  
+  enhd_pqt <- "data/enhd/enhd_nhdplusatts_3.parquet"
+  
+  if(!file.exists(enhd_pqt)) {
+    dir.create(dirname(enhd_pqt), recursive = TRUE, showWarnings = FALSE)
+    f <- sbtools::item_file_download("65cbbb98d34ef4b119cb37c9", 
+                                     names = "enhd_nhdplusatts.parquet", 
+                                     destinations = enhd_pqt)
+  }
+  
+  enhd_pqt
+  
+}
+
 # joins new network attributes for nhdplusv2 and returns a ready to use copy.
 join_enhd <- function(enhd_pqt, nhdp_geo) {
   
@@ -127,6 +147,8 @@ get_ref_network_1 <- function() {
     if(hash != sha_256) stop("hash doesn't match")
     
     zip::unzip(ref_net_gpkg_zip, junkpaths = TRUE, exdir = dirname(ref_net_gpkg))
+
+    file.rename("data/reference_network/reference_network.gpkg", ref_net_gpkg)
   }
   
   ref_net_gpkg

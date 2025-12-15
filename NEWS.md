@@ -1,3 +1,53 @@
+reference mainstems v3
+========================
+Two updates in the lower 48 states basins that are fully represented by NHDPlusV2:
+
+- https://geoconnex.us/ref/mainstems/1441404 and https://geoconnex.us/ref/mainstems/2547827 have a very subtle change. Superseding is not necessary.
+
+Transboundary basins have been updated significantly. NHDPlusHR is now the source geospatial representation for reference rivers in HU04s:
+
+- North East: "0101", "0102", "0103", "0104", "0105", "0108",
+- Great Lakes: "0401", "0409", "0420", "0427", "0429", "0430", "0431", "0432", "0416", "0433", "0417", "0421", "0422",
+- North Central: "0901", "0902", "0903", "0904",
+- North West: "1005", "1006",
+- South Central: "1303", "1304", "1308", "1309", 
+- South West: "1503", "1508", "1505",
+- Pacific North West: "1701", "1702", "1703", "1711",
+- Pacific South West: "1807", "1810"
+
+Changes to mainstems with drainage area greater than 500 sqkm in these basins include:
+
+Superseded due to flow direction incompatibility:
+
+- https://geoconnex.us/ref/mainstems/1891988
+- https://geoconnex.us/ref/mainstems/2290511
+- https://geoconnex.us/ref/mainstems/2575658
+
+Superseded due to missing network connectivity:
+
+- https://geoconnex.us/ref/mainstems/403884
+- https://geoconnex.us/ref/mainstems/471634
+- https://geoconnex.us/ref/mainstems/1873485
+- https://geoconnex.us/ref/mainstems/1886819
+- https://geoconnex.us/ref/mainstems/1872383
+- https://geoconnex.us/ref/mainstems/424107
+- https://geoconnex.us/ref/mainstems/1876065
+- https://geoconnex.us/ref/mainstems/2571793
+- https://geoconnex.us/ref/mainstems/1892314
+- https://geoconnex.us/ref/mainstems/1611505
+
+Superseded due to general network incompatibility:
+
+- https://geoconnex.us/ref/mainstems/1875793
+
+In transboundary basins, previous (NHDPlusV2-based) representations of mainstems were compared to the new (NHDPlusHR-based). This comparison was derived primarily from the "Mainstem Rivers of the Conterminous United States (Version 3.0)" data release (https://doi.org/10.5066/P13LNDDQ). 
+
+The headwater and outlet locations were compared within validation for reference mainstems v3 (this update). All changes where a headwater or outlet moved more than 10km were reviewed. If the new representation was found to be the mainstem of the same overall drainage basin, it was kept. Spot checks of mainstem representations with changes less than 10km confirmed that the validation efforts performed for https://doi.org/10.5066/P13LNDDQ are appropriate. A list of mainstem with headwater or outlet changes greater than 10km are listed in "data/review/changelog.csv".
+
+TODO: Track down new mainstems introduced for continuity in Canada
+
+TODO: Write up addition of mainstems that match to nhdplusv2 AND 3dhp.
+
 reference mainstems v2
 ========================
 

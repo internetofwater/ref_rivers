@@ -1,0 +1,264 @@
+# to run interactively, use:
+library(targets)
+library(dplyr)
+library(sf)
+old_ms <- tar_read("mainstems_v2")
+new_ms <- tar_read("mainstems_v3")
+old_net <- tar_read("enhd_v2")
+new_net <- tar_read("enhd_v3")
+ref_net <- tar_read("ref_net_v1")
+
+# loads comparison tables to check if headwater and outlet pairs are comparable
+# returns cases where headwater / outlet pairs do not match
+reconcile_mainstems <- function(old_ms, new_ms, old_net, new_net, ref_net) {
+  old_ms <- sf::read_sf(old_ms)
+  new_ms <- sf::read_sf(new_ms)
+  old_net <- arrow::read_parquet(old_net)
+  new_net <- arrow::read_parquet(new_net)
+  ref_net <- sf::read_sf(ref_net)
+  
+  # split ref_net into nhdplusv2 source and nhdplushr source
+  # we need to work through them seperately
+  nhdplusv2_ref_net <- dplyr::filter(ref_net, source == "nhdpv2") |>
+    dplyr::mutate(lp_mainstem_v3 = as.integer(lp_mainstem_v3))
+  nhdplushr_ref_net <- dplyr::filter(ref_net, source == "nhdphr") |>
+    dplyr::mutate(lp_mainstem_v3 = as.integer(lp_mainstem_v3))
+  
+  # verifies that nothing with NHDPlusV2 has changed.
+  nhdplusv2_check_df <- get_nhdplusv2_domain_check_df(new_ms, old_ms, new_net, old_net, nhdplusv2_ref_net)
+  
+  new_ms <- dplyr::filter(new_ms, !lp_mainstem_v3 %in% nhdplusv2_ref_net$lp_mainstem_v3)
+  
+  # Compares new mainstems as defined in ref_net nhdplushr to those defined in old_net
+  nhdplushr_check_df <- get_nhdplushr_domain_check_df(nhdplushr_ref_net, old_ms, 
+                                                      old_net, new_ms, new_net)
+  
+  if(nrow(nhdplusv2_check_df) > 0) stop("nothing should have changed!")
+  
+  
+  
+  return(list(match = matches, 
+              update_outlet = bind_rows(matches_dm, 
+                                        matches_na_dm, 
+                                        matches_diff_dm),
+              remove = remove,
+              update = check_df))
+}
+
+# investigates the lp_mainstem_v3 
+get_nhdplushr_domain_check_df <- function(nhdplushr_ref_net, old_ms, old_net, new_ms, new_net) {
+  
+  # Verify what levelpaths are present in the new network
+  missing <- filter(new_ms, !lp_mainstem_v3 %in% ref_net$lp_mainstem_v3 & !is.na(reference_mainstem))
+  checks <- sf::read_sf("data/review/deprecated_v3.geojson")
+  
+  # the check list includes all the missing reference mainstems!
+  stopifnot(all(missing$reference_mainstem %in% checks$reference_mainstem))
+  
+  # For those that are present, check headwater / outlet locations
+  
+  # lp_mainstem_v3
+  new_ms <- filter(new_ms, lp_mainstem_v3 %in% ref_net$lp_mainstem_v3 & !is.na(reference_mainstem))
+  
+  # ref_net candidates to replace them
+  ref_net <- filter(ref_net, lp_mainstem_v3 %in% new_ms$lp_mainstem_v3)
+  
+  # we have for sure accounted for all reference mainstems in new_ms
+  stopifnot(all(ref_net$reference_mainstem %in% new_ms$reference_mainstem))
+  
+  ref_net <- arrange(ref_net, reference_mainstem) |>
+    group_by(reference_mainstem) |>
+    group_split()
+
+  new_ms <- arrange(new_ms, reference_mainstem) |>
+    hydroloom::st_compatibalize(ref_net[[1]])
+
+  # we have a unique data.frame keyed on reference_mainstem
+  stopifnot(nrow(new_ms) == length(unique(new_ms$reference_mainstem)))
+  
+  checks <- pbapply::pblapply(seq_len(nrow(new_ms)), \(i) {
+    
+    message(i)
+    
+    old <- new_ms[i,]
+    
+    new <- ref_net[[i]]  
+  
+    # we for sure have the same reference mainstem
+    stopifnot(new$reference_mainstem[1] == old$reference_mainstem)
+  
+    # TODO: remove the total_da_sqkm filter here once 
+    # https://code.usgs.gov/wma/nhgf/reference-fabric/reference-network/-/issues/6
+    # is done
+    new_head <- filter(new, !id %in% toid) |>
+      filter(total_da_sqkm == min(total_da_sqkm)) |>
+      hydroloom::get_node("start")
+    
+    new_out <- filter(new, !toid %in% id) |>
+      filter(total_da_sqkm == max(total_da_sqkm)) |>
+      hydroloom::get_node("end")
+    
+    old_head <- hydroloom::get_node(old, "start")
+    old_out <- hydroloom::get_node(old, "end")
+    
+    # make sure we have a clean set of old and new heads and outlets
+    stopifnot(nrow(old_head) == 1)
+    stopifnot(nrow(new_head) == 1)
+    stopifnot(nrow(old_out) == 1)
+    stopifnot(nrow(new_out) == 1)
+  
+    data.frame(reference_mainstem = old$reference_mainstem, 
+               head_dist = sf::st_distance(old_head, new_head), 
+               out_dist = sf::st_distance(old_out, new_out))
+        
+  })
+  
+  checks <- bind_rows(checks)
+  changelog <- readr::read_csv("data/review/changelog.csv")
+  
+  checks <- checks[!checks$reference_mainstem %in% changelog$reference_mainstem,]  
+    
+  checks <- left_join(checks, select(new_ms, reference_mainstem, length))
+
+  checks$outlet_diff <- as.numeric(checks$out_dist) / (checks$length * 1000)
+  
+  checks$head_diff <- as.numeric(checks$head_dist) / (checks$lengt* 1000)
+
+  checks$good_outlet <- checks$outlet_diff < 0.1
+  checks$good_head <- checks$head_diff < 0.1      
+  
+  bad_checks <- checks[!checks$good_head | !checks$good_outlet,]
+}
+
+get_nhdplusv2_domain_check_df <- function(new_ms, old_ms, new_net, old_net, nhdplusv2_ref_net) {
+  # first, look at only NHDPlusV2 sourced mainstems
+  new_ms_ref <- filter(new_ms, !is.na(reference_mainstem) & lp_mainstem_v3 %in% nhdplusv2_ref_net$lp_mainstem_v3)
+  old_ms_ref <- filter(old_ms, LevelPathI %in% new_ms_ref$lp_mainstem_v2)
+  
+  # grab the outlet of the new mainstems
+  new_lp_out <- new_net |>
+    group_by(levelpathi) |>
+    filter(hydroseq == min(hydroseq)) |>
+    select(outlet_comid = comid, new_levelpathi = levelpathi, new_dnlevelpat = dnlevelpat) |>
+    ungroup()
+  
+  # grab the outlet of the old mainstems (only used for a check below)
+  old_lp_out <- old_net |>
+    group_by(levelpathi) |>
+    filter(hydroseq == min(hydroseq)) |>
+    select(old_outlet_comid_check = comid, old_lp = levelpathi, old_dnlevelpat = dnlevelpat) |>
+    ungroup()
+  
+  # create an old_lp table with a bunch of attributes
+  old_lp <- select(sf::st_drop_geometry(old_ms_ref), 
+                   old_lp = LevelPathI, 
+                   # we will use head comid as the match
+                   head_nhdpv2_COMID = head_nhdpv2_COMID, 
+                   old_outlet_comid = outlet_nhdpv2_COMID) |>
+    # this was just a check to make sure things were what I thought they were.
+    left_join(old_lp_out, by = "old_lp")
+  
+  # This verifies that we loaded the same version of the mainstem summar and net atts
+  if(!all(old_lp$old_outlet_comid == old_lp$old_outlet_comid_check)) stop("IDs don't match?")
+  
+  old_lp <- select(old_lp, -old_outlet_comid_check)
+  
+  ############### FIRST CHECK WHERE HEAD AND OUTLET MATCH ######################
+  # join old to new using head comid as the match.
+  check_df <- old_lp  |>
+    left_join(select(new_ms_ref, new_levelpathi = lp_mainstem_v3, head_nhdpv2_COMID, outlet_nhdpv2_COMID),
+              by = "head_nhdpv2_COMID") |>
+    # also join new_dnlevelpath by new_levelpathi for outlet checks
+    left_join(distinct(select(new_lp_out, new_levelpathi, new_dnlevelpat)),
+              by = "new_levelpathi") |>
+    sf::st_sf()
+  
+  rm(old_lp, old_lp_out, new_lp_out)
+  
+  remove <- filter(check_df, sf::st_is_empty(check_df))
+  
+  check_df <- filter(check_df, !old_lp %in% remove$old_lp)
+  
+  # if the outlet comid is the same -- it's a match
+  matches <- check_df |>
+    filter(old_outlet_comid == outlet_nhdpv2_COMID)
+  
+  # add the dnlevelpath and check if it at least goes the same place.
+  check_df <- check_df |>
+    left_join(select(sf::st_drop_geometry(matches), mapped_old_dlp = old_lp, new_levelpathi), 
+              by = c("new_dnlevelpat" = "new_levelpathi")) |>
+    # filter out stuff we already matched.
+    filter(!old_lp %in% matches$old_lp)
+  
+  # these go to the same downstream path
+  matches_dm <- check_df |>
+    filter(mapped_old_dlp == old_dnlevelpat)
+  
+  if(nrow(matches_dm) > 0) {
+    # get the old mainstem for comparison
+    matches_dm_old <- sf::st_sf(old_ms) |>
+      filter(LevelPathI %in% matches_dm$old_lp)
+    
+    matches_dm$diff_dist <- sf::st_distance(hydroloom::get_node(matches_dm_old),
+                                            hydroloom::get_node(matches_dm), 
+                                            by_element = TRUE)
+    rm(matches_dm_old)
+    
+    matches_dm$lengthm <- sf::st_length(matches_dm)
+    
+    matches_dm$diff <- as.numeric(matches_dm$diff_dist / matches_dm$lengthm)
+    
+    # assume anything where diff_dist is 1/10th the length or less is a match
+    matches_dm <- filter(matches_dm, diff < 0.1)
+    
+    check_df <- filter(check_df, !old_lp %in% matches_dm$old_lp)
+  }
+  
+  # these go to something that changed or something different.
+  # we can check how far these outlets moved
+  matches_diff_dm <- check_df |>
+    filter((!is.na(mapped_old_dlp) &
+              mapped_old_dlp != old_dnlevelpat))
+  
+  matches_diff_dm_old <- sf::st_sf(old_ms) |>
+    filter(LevelPathI %in% matches_diff_dm$old_lp) |>
+    hydroloom::st_compatibalize(matches_diff_dm)
+  
+  matches_diff_dm$diff_dist <- sf::st_distance(hydroloom::get_node(matches_diff_dm_old),
+                                               hydroloom::get_node(matches_diff_dm), 
+                                               by_element = TRUE)
+  
+  rm(matches_diff_dm_old)
+  
+  matches_diff_dm$lengthm <- sf::st_length(matches_diff_dm)
+  matches_diff_dm$diff <- as.numeric(matches_diff_dm$diff_dist / matches_diff_dm$lengthm)
+  
+  matches_diff_dm <- filter(matches_diff_dm, diff < 0.1)
+  
+  check_df <- filter(check_df, !old_lp %in% matches_diff_dm$old_lp)
+  
+  # these are really different many are where what was a headwater is now 
+  # somewhere along a mainstem others just flow to something that changed.
+  na_dm <- check_df |>
+    filter(!check_df$old_lp %in% matches_diff_dm$old_lp & 
+             is.na(mapped_old_dlp))
+  
+  na_dm_old <- old_ms |>
+    filter(LevelPathI %in% na_dm$old_lp) |>
+    hydroloom::st_compatibalize(na_dm)
+  
+  na_dm$diff_dist <- sf::st_distance(hydroloom::get_node(na_dm_old), 
+                                     hydroloom::get_node(na_dm), 
+                                     by_element = TRUE)
+  
+  na_dm$lengthm <- sf::st_length(na_dm)
+  
+  na_dm$diff <- as.numeric(na_dm$diff_dist / na_dm$lengthm)
+  
+  matches_na_dm <- filter(na_dm, diff < 0.1)
+  
+  # what's left does not match outlets and has an outlet that is more than 
+  # 1/10th the mainstem length away from the original. All of these will be
+  # superseded in the registry.
+  check_df <- filter(check_df, !old_lp %in% matches_na_dm$old_lp)
+}
