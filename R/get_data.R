@@ -153,4 +153,27 @@ get_ref_network_1 <- function() {
   
   ref_net_gpkg
   
+}
+
+get_ref_rivers <- function(version = "v2.1", sha256sum = "a9161151f3513206b6d5348c827dca6cbc4df147f8de98847ad1fa1e58a6a099") {
+  
+  url <- paste0("https://github.com/internetofwater/ref_rivers/releases/download/", version, "/mainstems.gpkg")
+  
+  out_path <- file.path("data/ref_rivers", version, "mainstems.gpkg")
+  
+  if(!file.exists(out_path)) {
+    
+    dir.create(dirname(out_path), recursive = TRUE, showWarnings = FALSE)
+   
+    f <- httr::GET(url, httr::write_disk(out_path))
+    
+    if(!f$status_code == 200) stop("error downloading")
+    
+    hash <- tools::sha256sum(out_path)
+  
+    if(sha256sum != hash) stop("hash doesn't match")   
   }
+  
+  out_path
+  
+}

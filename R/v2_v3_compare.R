@@ -1,12 +1,12 @@
 # to run interactively, use:
-library(targets)
-library(dplyr)
-library(sf)
-old_ms <- tar_read("mainstems_v2")
-new_ms <- tar_read("mainstems_v3")
-old_net <- tar_read("enhd_v2")
-new_net <- tar_read("enhd_v3")
-ref_net <- tar_read("ref_net_v1")
+# library(targets)
+# library(dplyr)
+# library(sf)
+# old_ms <- tar_read("mainstems_v2")
+# new_ms <- tar_read("mainstems_v3")
+# old_net <- tar_read("enhd_v2")
+# new_net <- tar_read("enhd_v3")
+# ref_net <- tar_read("ref_net_v1")
 
 # loads comparison tables to check if headwater and outlet pairs are comparable
 # returns cases where headwater / outlet pairs do not match
@@ -27,62 +27,94 @@ reconcile_mainstems <- function(old_ms, new_ms, old_net, new_net, ref_net) {
   # verifies that nothing with NHDPlusV2 has changed.
   nhdplusv2_check_df <- get_nhdplusv2_domain_check_df(new_ms, old_ms, new_net, old_net, nhdplusv2_ref_net)
   
-  new_ms <- dplyr::filter(new_ms, !lp_mainstem_v3 %in% nhdplusv2_ref_net$lp_mainstem_v3)
-  
-  # Compares new mainstems as defined in ref_net nhdplushr to those defined in old_net
-  nhdplushr_check_df <- get_nhdplushr_domain_check_df(nhdplushr_ref_net, old_ms, 
-                                                      old_net, new_ms, new_net)
-  
   if(nrow(nhdplusv2_check_df) > 0) stop("nothing should have changed!")
   
+  new_ms_no_v2 <- dplyr::filter(new_ms, !lp_mainstem_v3 %in% nhdplusv2_ref_net$lp_mainstem_v3)
+
+  # these deprecated mainstems have been verified through manual review.
+  # they are all in the NHDPlusHR domain
+  deprecate <- sf::read_sf("data/review/deprecated_v3.geojson")
   
+  # these are changes that were manually reviewed and are ok to keep / not deprecate
+  # they are all in the NHDPlusHR domain
+  changelog <- readr::read_csv("data/review/changelog_v3.csv")
+    
+  # Compares new mainstems as defined in ref_net nhdplushr to those defined in old_net
+  nhdplushr_check_df <- get_nhdplushr_domain_check_df(nhdplushr_ref_net, old_ms, 
+                                                      old_net, new_ms_no_v2, new_net,
+                                                      deprecate, changelog)
   
-  return(list(match = matches, 
-              update_outlet = bind_rows(matches_dm, 
-                                        matches_na_dm, 
-                                        matches_diff_dm),
-              remove = remove,
-              update = check_df))
+  bad_change <- nhdplushr_check_df[!nhdplushr_check_df$good_head & !nhdplushr_check_df$good_outlet,]
+  
+  stopifnot(nrow(bad_change) == 0)
+  
+  # look at lp_mainstem_v3 that are in this set that aren't in the new_ms set.
+  new_lp <- nhdplushr_ref_net$lp_mainstem_v3[!is.na(nhdplushr_ref_net$lp_mainstem_v3) & 
+                                               !nhdplushr_ref_net$lp_mainstem_v3 %in% new_ms$lp_mainstem_v3]
+  
+  stopifnot(all(new_lp > 7000000))
+  
+  # these are all the mainstems that are staying the same
+  keep <- dplyr::filter(new_ms, !is.na(reference_mainstem) & !reference_mainstem %in% deprecate$reference_mainstem)
+  
+  # these are all the mainstems that are being added fand are in the NHDPlusV2 domain
+  add <- dplyr::filter(new_ms, is.na(reference_mainstem) & 
+                         !is.na(head_nhdplushr_id) & !is.na(outlet_nhdplushr_id) &
+                         !is.na(head_nhd_permid) & !is.na(outlet_nhd_permid))
+  
+  # these are all the mainstems that are being replaced in the NHDPlusHR domain
+  nhdphr_source_replace <- dplyr::filter(new_ms, reference_mainstem %in% nhdplushr_check_df$reference_mainstem)
+  
+  # these are all the mainstems that are being added in the NHDPlusHR domain
+  nhdphr_source_new <- dplyr::filter(new_ms, lp_mainstem_v3 %in% add$lp_mainstem_v3 & 
+                                       lp_mainstem_v3 %in% nhdplushr_ref_net$lp_mainstem_v3)
+  
+  return(list(keep = keep,
+              add = add, 
+              nhdphr_source_replace = nhdphr_source_replace,
+              nhdphr_source_new = nhdphr_source_new,
+              deprecate = deprecate,
+              changelog = changelog))
 }
 
 # investigates the lp_mainstem_v3 
-get_nhdplushr_domain_check_df <- function(nhdplushr_ref_net, old_ms, old_net, new_ms, new_net) {
+get_nhdplushr_domain_check_df <- function(nhdplushr_ref_net, old_ms, old_net, new_ms, new_net, deprecate, changelog) {
   
   # Verify what levelpaths are present in the new network
-  missing <- filter(new_ms, !lp_mainstem_v3 %in% ref_net$lp_mainstem_v3 & !is.na(reference_mainstem))
-  checks <- sf::read_sf("data/review/deprecated_v3.geojson")
+  missing <- filter(new_ms, !lp_mainstem_v3 %in% nhdplushr_ref_net$lp_mainstem_v3 & !is.na(reference_mainstem))
   
   # the check list includes all the missing reference mainstems!
-  stopifnot(all(missing$reference_mainstem %in% checks$reference_mainstem))
+  stopifnot(all(missing$reference_mainstem %in% deprecate$reference_mainstem))
   
+  # remove additional problematic mainstems in deprecation list
+  new_ms <- filter(new_ms, !reference_mainstem %in% deprecate$reference_mainstem)
+  nhdplushr_ref_net <- filter(nhdplushr_ref_net, !reference_mainstem %in% deprecate$reference_mainstem)
   # For those that are present, check headwater / outlet locations
   
   # lp_mainstem_v3
-  new_ms <- filter(new_ms, lp_mainstem_v3 %in% ref_net$lp_mainstem_v3 & !is.na(reference_mainstem))
+  new_ms <- filter(new_ms, lp_mainstem_v3 %in% nhdplushr_ref_net$lp_mainstem_v3 & !is.na(reference_mainstem))
   
-  # ref_net candidates to replace them
-  ref_net <- filter(ref_net, lp_mainstem_v3 %in% new_ms$lp_mainstem_v3)
+  # nhdplushr_ref_net candidates to replace them
+  nhdplushr_ref_net <- filter(nhdplushr_ref_net, lp_mainstem_v3 %in% new_ms$lp_mainstem_v3)
   
   # we have for sure accounted for all reference mainstems in new_ms
-  stopifnot(all(ref_net$reference_mainstem %in% new_ms$reference_mainstem))
+  stopifnot(all(nhdplushr_ref_net$reference_mainstem %in% new_ms$reference_mainstem))
   
-  ref_net <- arrange(ref_net, reference_mainstem) |>
+  nhdplushr_ref_net <- arrange(nhdplushr_ref_net, reference_mainstem) |>
     group_by(reference_mainstem) |>
     group_split()
 
   new_ms <- arrange(new_ms, reference_mainstem) |>
-    hydroloom::st_compatibalize(ref_net[[1]])
+    hydroloom::st_compatibalize(nhdplushr_ref_net[[1]])
 
   # we have a unique data.frame keyed on reference_mainstem
   stopifnot(nrow(new_ms) == length(unique(new_ms$reference_mainstem)))
   
   checks <- pbapply::pblapply(seq_len(nrow(new_ms)), \(i) {
     
-    message(i)
-    
     old <- new_ms[i,]
     
-    new <- ref_net[[i]]  
+    new <- nhdplushr_ref_net[[i]]  
   
     # we for sure have the same reference mainstem
     stopifnot(new$reference_mainstem[1] == old$reference_mainstem)
@@ -114,7 +146,6 @@ get_nhdplushr_domain_check_df <- function(nhdplushr_ref_net, old_ms, old_net, ne
   })
   
   checks <- bind_rows(checks)
-  changelog <- readr::read_csv("data/review/changelog.csv")
   
   checks <- checks[!checks$reference_mainstem %in% changelog$reference_mainstem,]  
     
@@ -127,7 +158,7 @@ get_nhdplushr_domain_check_df <- function(nhdplushr_ref_net, old_ms, old_net, ne
   checks$good_outlet <- checks$outlet_diff < 0.1
   checks$good_head <- checks$head_diff < 0.1      
   
-  bad_checks <- checks[!checks$good_head | !checks$good_outlet,]
+  return(checks)
 }
 
 get_nhdplusv2_domain_check_df <- function(new_ms, old_ms, new_net, old_net, nhdplusv2_ref_net) {
@@ -262,3 +293,4 @@ get_nhdplusv2_domain_check_df <- function(new_ms, old_ms, new_net, old_net, nhdp
   # superseded in the registry.
   check_df <- filter(check_df, !old_lp %in% matches_na_dm$old_lp)
 }
+

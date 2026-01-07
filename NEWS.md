@@ -1,10 +1,22 @@
 reference mainstems v3
 ========================
-Two updates in the lower 48 states basins that are fully represented by NHDPlusV2:
 
-- https://geoconnex.us/ref/mainstems/1441404 and https://geoconnex.us/ref/mainstems/2547827 have a very subtle change. Superseding is not necessary.
+Overall, 33731 of 33890 mainstem ids are being kept from V2 to V3. 
 
-Transboundary basins have been updated significantly. NHDPlusHR is now the source geospatial representation for reference rivers in HU04s:
+The 161 (less than 0.05%) mainstems ids that are being retired are all in transboundary basins 
+where NHDPlusHR geometry is replacing mainstems derived from NHDPlusV2. All mainstems that are
+being retired have been manually reviewed and new mainstems that superseded them have been 
+identified and are listed in their attributes. 
+
+The primary change in reference mainstems v3 is the addition of about 847k (846966) mainstem identifiers.
+The added mainstems are derived from "Mainstem Rivers of the Conterminous United 
+States (Version 3.0)" data release (https://doi.org/10.5066/P13LNDDQ). Criteria 
+used to determine additions were that a headwater and outlet flowline and the path
+connecting them could be identified in the NHDPlusV2, NHDPlusHR, and the
+snapshot of the NHD that initialized the 3DHP dataset (https://doi.org/10.5066/P94H0DAG).
+
+In reference mainstems V3, transboundary basins have been updated significantly. 
+NHDPlusHR is now the source geospatial representation for reference rivers in HU04s:
 
 - North East: "0101", "0102", "0103", "0104", "0105", "0108",
 - Great Lakes: "0401", "0409", "0420", "0427", "0429", "0430", "0431", "0432", "0416", "0433", "0417", "0421", "0422",
@@ -40,13 +52,25 @@ Superseded due to general network incompatibility:
 
 - https://geoconnex.us/ref/mainstems/1875793
 
-In transboundary basins, previous (NHDPlusV2-based) representations of mainstems were compared to the new (NHDPlusHR-based). This comparison was derived primarily from the "Mainstem Rivers of the Conterminous United States (Version 3.0)" data release (https://doi.org/10.5066/P13LNDDQ). 
+In transboundary basins, previous (NHDPlusV2-based) representations of mainstems 
+were compared to the new (NHDPlusHR-based) representation. This comparison was 
+derived primarily from the "Mainstem Rivers of the Conterminous United States 
+(Version 3.0)" data release (https://doi.org/10.5066/P13LNDDQ). 
 
-The headwater and outlet locations were compared within validation for reference mainstems v3 (this update). All changes where a headwater or outlet moved more than 10km were reviewed. If the new representation was found to be the mainstem of the same overall drainage basin, it was kept. Spot checks of mainstem representations with changes less than 10km confirmed that the validation efforts performed for https://doi.org/10.5066/P13LNDDQ are appropriate. A list of mainstem with headwater or outlet changes greater than 10km are listed in "data/review/changelog.csv".
+The headwater and outlet locations were compared within validation for reference 
+mainstems v3 (this update). All changes where a headwater or outlet moved more 
+than 10km and all mainstems where both the headwater and outlet moved by more 
+than 10% the overall length of the mainstem were reviewed. If the new 
+representation was found to be the mainstem of the same overall drainage basin, 
+it was kept. Spot checks of mainstem representations with changes less than 
+10km or 10% of overall length confirmed that the validation efforts performed 
+for https://doi.org/10.5066/P13LNDDQ are appropriate. A list of mainstem with 
+headwater or outlet changes greater than 10km are listed in 
+"data/review/changelog_v3.csv".
 
-TODO: Track down new mainstems introduced for continuity in Canada
-
-TODO: Write up addition of mainstems that match to nhdplusv2 AND 3dhp.
+Sixteen mainstems have been added that are in NHDPlusHR but fully in Canada 
+and do not connect to the NHDPlusV2 domain. They have been included to ensure 
+rivers that eminate from the NHDPlusV2 domain connect to a complete network.
 
 reference mainstems v2
 ========================
