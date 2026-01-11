@@ -12,7 +12,7 @@
 # returns cases where headwater / outlet pairs do not match
 reconcile_mainstems <- function(old_ms, new_ms, old_net, new_net, ref_net) {
   old_ms <- sf::read_sf(old_ms)
-  new_ms <- sf::read_sf(new_ms)
+  new_ms <- get_mainstem_summary_v3(new_ms)
   old_net <- arrow::read_parquet(old_net)
   new_net <- arrow::read_parquet(new_net)
   ref_net <- sf::read_sf(ref_net)

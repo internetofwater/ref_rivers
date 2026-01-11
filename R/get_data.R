@@ -55,6 +55,17 @@ get_mainstems_db_3 <- function() {
   ms_gpkg
 }
 
+get_mainstem_summary_v3 <- function(ms_gpkg) {
+  
+  mainstem_summary_v3 <- sf::read_sf(ms_gpkg, "mainstem_summary")
+  
+  lookup <- sf::read_sf("data/review/missing_reference_mainstems.csv")
+  
+  mainstem_summary_v3$reference_mainstem[match(lookup$outlet_nhdpv2_COMID, mainstem_summary_v3$outlet_nhdpv2_COMID)] <- lookup$uri
+  
+  mainstem_summary_v3
+}
+
 get_enhd_1 <- function() {
   
   # Blodgett, D.L., 2022, Updated CONUS river network attributes based on the 
