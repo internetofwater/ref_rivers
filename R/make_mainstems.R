@@ -19,6 +19,8 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   
   stopifnot(all(new_net$toid == "" | new_net$toid %in% new_net$id)) # verify that all outlets are ""
   
+  new_net <- new_net[new_net$id != "nhdpv2-947020332",]
+  
   # we are only considering where lp_mainstem_v3 is populated
   # NOTE that some lp_mainstem_v3 values in this are newly introduced and will not join 
   # to the v2 enhd network.
@@ -165,16 +167,36 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
                       length = "length")))  |>
       select(-any_of(c("length", "totdasqkm", "lp_mainstem_v2", "level"))))
   
+  # remove two duplicates that should not be in here
+  ms_out <- ms_out[!(!is.na(ms_out$id) & ms_out$id == 2244483 & !is.na(ms_out$lp_mainstem_v3) & ms_out$lp_mainstem_v3 == 1895461),]
+  ms_out <- ms_out[!(!is.na(ms_out$id) & ms_out$id == 1441404 & !is.na(ms_out$lp_mainstem_v3) & ms_out$lp_mainstem_v3 == 2063152),]
+
   stopifnot(all(ref_rivers$uri %in% ms_out$uri))
-  
-  rm(changes)
-  
-  # remove one duplicate that should not be in here
-  ms_out <- ms_out[!(!is.na(ms_out$id) & ms_out$id == 2244483 & ms_out$lengthkm < 200),]
-  
+
   # verify that we have lp_mainstem_v3 for everything that is not superseded
   stopifnot(!any(!ms_out$superseded & is.na(ms_out$lp_mainstem_v3)))
   stopifnot(!any(!is.na(ms_out$lp_mainstem_v3) & duplicated(ms_out$lp_mainstem_v3)))
+  stopifnot(!any(!is.na(ms_out$id) & duplicated(ms_out$id)))
+
+  ### need to get geometry from new_net for the two nhdphr_source changes sets
+      
+  nhdphr_source <- filter(new_net, lp_mainstem_v3 %in% c(changes$nhdphr_source_replace$lp_mainstem_v3, changes$nhdphr_source_new$lp_mainstem_v3)) |>
+    mutate(lp_mainstem_v3 = as.numeric(lp_mainstem_v3))
+  
+  # verify that we have things all lined up
+  check <- inner_join(select(st_drop_geometry(ms_out), lp_mainstem_v3, uri),
+                      select(st_drop_geometry(nhdphr_source), lp_mainstem_v3, uri_update = reference_mainstem), 
+                      by = "lp_mainstem_v3")
+  
+  stopifnot(all(is.na(check$uri) | check$uri == check$uri_update))
+  
+  rm(check)
+  
+  nhdphr_source <- merge_ms(nhdphr_source)
+  
+  ms_out$geom[match(nhdphr_source$lp_mainstem_v3, ms_out$lp_mainstem_v3)] <- nhdphr_source$geom
+  
+  rm(changes)
   
   # some ids that need to be updated so we can get down mainstem later on.
   available <- seq(min(ms_out$id, na.rm = TRUE), max(ms_out$id, na.rm = TRUE))
@@ -300,4 +322,46 @@ add_dm <- function(network) {
   network %>%
     left_join(all_lp, by = "levelpathi") %>%
     rename(down_levelpaths = dnlp)
+}
+
+split_number_chunks <- function(x, n) {
+  split(x, cut(seq_along(x), n, labels = FALSE))
+}
+
+merge_ms <- function(x) {
+  rows <- nrow(x)
+  
+  x <- hydroloom::add_topo_sort(x)
+  
+  stopifnot(nrow(x) == rows)
+  
+  geom <- select(x, lp_mainstem_v3, topo_sort) |>
+    arrange(desc(topo_sort)) |> 
+    group_by(lp_mainstem_v3) |>
+    group_split(.keep = TRUE) |>
+    split_number_chunks(80)
+  
+  cl <- parallel::makeCluster(8)
+  
+  on.exit(parallel::stopCluster(cl))
+  
+  collapse_lines <- function(g) {
+    
+    get_single_line <- function(gg) {
+      sf::st_sfc(
+        sf::st_linestring(
+          sf::st_coordinates(sf::st_geometry(gg))[, 1:2]), 
+        crs = sf::st_crs(gg))
+    }
+    
+    do.call(c, lapply(g, get_single_line))
+    
+  }
+  
+  geoms <- do.call(c, pbapply::pblapply(geom, collapse_lines, cl = cl))
+  
+  ids <- do.call(c, lapply(geom, \(x) unique(do.call(c, lapply(x, \(y) y$lp_mainstem_v3)))))
+  
+  st_sf(lp_mainstem_v3 = ids,
+        geom = geoms)  
 }

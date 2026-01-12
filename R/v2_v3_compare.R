@@ -17,14 +17,26 @@ reconcile_mainstems <- function(old_ms, new_ms, old_net, new_net, ref_net) {
   new_net <- arrow::read_parquet(new_net)
   ref_net <- sf::read_sf(ref_net)
   
+  both_ref_net <- select(st_drop_geometry(ref_net), lp_mainstem_v3, source) |>
+    group_by(lp_mainstem_v3) |>
+    filter("nhdpv2" %in% source & "nhdphr" %in% source) |>
+    ungroup() |>
+    distinct() |>
+    filter(!lp_mainstem_v3 %in% 37504) # leave in nhdplusv2 domain
+  
+  switch_to_hr <- ref_net$id[ref_net$lp_mainstem_v3 %in% both_ref_net$lp_mainstem_v3]
+
   # split ref_net into nhdplusv2 source and nhdplushr source
   # we need to work through them seperately
-  nhdplusv2_ref_net <- dplyr::filter(ref_net, source == "nhdpv2") |>
+  nhdplusv2_ref_net <- dplyr::filter(ref_net, source == "nhdpv2" & !id %in% switch_to_hr) |>
     dplyr::mutate(lp_mainstem_v3 = as.integer(lp_mainstem_v3))
-  nhdplushr_ref_net <- dplyr::filter(ref_net, source == "nhdphr") |>
+  nhdplushr_ref_net <- dplyr::filter(ref_net, source == "nhdphr" | id %in% switch_to_hr) |>
     dplyr::mutate(lp_mainstem_v3 = as.integer(lp_mainstem_v3))
   
-  # verifies that nothing with NHDPlusV2 has changed.
+  # make double sure
+  stopifnot(all(ref_net$id[ref_net$source == "nhdpv2" | ref_net$source == "nhdphr"] %in% c(nhdplusv2_ref_net$id, nhdplushr_ref_net$id)))
+  stopifnot(all(switch_to_hr %in% nhdplushr_ref_net$id))
+  
   nhdplusv2_check_df <- get_nhdplusv2_domain_check_df(new_ms, old_ms, new_net, old_net, nhdplusv2_ref_net)
   
   if(nrow(nhdplusv2_check_df) > 0) stop("nothing should have changed!")
@@ -46,7 +58,7 @@ reconcile_mainstems <- function(old_ms, new_ms, old_net, new_net, ref_net) {
   
   bad_change <- nhdplushr_check_df[!nhdplushr_check_df$good_head & !nhdplushr_check_df$good_outlet,]
   
-  stopifnot(nrow(bad_change) == 0)
+  stopifnot(all(bad_change$checked))
   
   # look at lp_mainstem_v3 that are in this set that aren't in the new_ms set.
   new_lp <- nhdplushr_ref_net$lp_mainstem_v3[!is.na(nhdplushr_ref_net$lp_mainstem_v3) & 
@@ -78,41 +90,41 @@ reconcile_mainstems <- function(old_ms, new_ms, old_net, new_net, ref_net) {
 }
 
 # investigates the lp_mainstem_v3 
-get_nhdplushr_domain_check_df <- function(nhdplushr_ref_net, old_ms, old_net, new_ms, new_net, deprecate, changelog) {
+get_nhdplushr_domain_check_df <- function(nhdplushr_ref_net, old_ms, old_net, new_ms_no_v2, new_net, deprecate, changelog) {
   
   # Verify what levelpaths are present in the new network
-  missing <- filter(new_ms, !lp_mainstem_v3 %in% nhdplushr_ref_net$lp_mainstem_v3 & !is.na(reference_mainstem))
+  missing <- filter(new_ms_no_v2, !lp_mainstem_v3 %in% nhdplushr_ref_net$lp_mainstem_v3 & !is.na(reference_mainstem))
   
   # the check list includes all the missing reference mainstems!
   stopifnot(all(missing$reference_mainstem %in% deprecate$reference_mainstem))
   
   # remove additional problematic mainstems in deprecation list
-  new_ms <- filter(new_ms, !reference_mainstem %in% deprecate$reference_mainstem)
+  new_ms_no_v2 <- filter(new_ms_no_v2, !reference_mainstem %in% deprecate$reference_mainstem)
   nhdplushr_ref_net <- filter(nhdplushr_ref_net, !reference_mainstem %in% deprecate$reference_mainstem)
   # For those that are present, check headwater / outlet locations
   
   # lp_mainstem_v3
-  new_ms <- filter(new_ms, lp_mainstem_v3 %in% nhdplushr_ref_net$lp_mainstem_v3 & !is.na(reference_mainstem))
+  new_ms_no_v2 <- filter(new_ms_no_v2, lp_mainstem_v3 %in% nhdplushr_ref_net$lp_mainstem_v3 & !is.na(reference_mainstem))
   
   # nhdplushr_ref_net candidates to replace them
-  nhdplushr_ref_net <- filter(nhdplushr_ref_net, lp_mainstem_v3 %in% new_ms$lp_mainstem_v3)
+  nhdplushr_ref_net <- filter(nhdplushr_ref_net, lp_mainstem_v3 %in% new_ms_no_v2$lp_mainstem_v3)
   
-  # we have for sure accounted for all reference mainstems in new_ms
-  stopifnot(all(nhdplushr_ref_net$reference_mainstem %in% new_ms$reference_mainstem))
+  # we have for sure accounted for all reference mainstems in new_ms_no_v2
+  stopifnot(all(nhdplushr_ref_net$reference_mainstem %in% new_ms_no_v2$reference_mainstem))
   
   nhdplushr_ref_net <- arrange(nhdplushr_ref_net, reference_mainstem) |>
     group_by(reference_mainstem) |>
     group_split()
 
-  new_ms <- arrange(new_ms, reference_mainstem) |>
+  new_ms_no_v2 <- arrange(new_ms_no_v2, reference_mainstem) |>
     hydroloom::st_compatibalize(nhdplushr_ref_net[[1]])
 
   # we have a unique data.frame keyed on reference_mainstem
-  stopifnot(nrow(new_ms) == length(unique(new_ms$reference_mainstem)))
+  stopifnot(nrow(new_ms_no_v2) == length(unique(new_ms_no_v2$reference_mainstem)))
   
-  checks <- pbapply::pblapply(seq_len(nrow(new_ms)), \(i) {
-    
-    old <- new_ms[i,]
+  checks <- pbapply::pblapply(seq_len(nrow(new_ms_no_v2)), \(i) {
+    message(i)
+    old <- new_ms_no_v2[i,]
     
     new <- nhdplushr_ref_net[[i]]  
   
@@ -147,13 +159,13 @@ get_nhdplushr_domain_check_df <- function(nhdplushr_ref_net, old_ms, old_net, ne
   
   checks <- bind_rows(checks)
   
-  checks <- checks[!checks$reference_mainstem %in% changelog$reference_mainstem,]  
+  checks$checked <- checks$reference_mainstem %in% changelog$reference_mainstem 
     
-  checks <- left_join(checks, select(new_ms, reference_mainstem, length))
+  checks <- left_join(checks, select(new_ms_no_v2, reference_mainstem, length))
 
   checks$outlet_diff <- as.numeric(checks$out_dist) / (checks$length * 1000)
   
-  checks$head_diff <- as.numeric(checks$head_dist) / (checks$lengt* 1000)
+  checks$head_diff <- as.numeric(checks$head_dist) / (checks$length* 1000)
 
   checks$good_outlet <- checks$outlet_diff < 0.1
   checks$good_head <- checks$head_diff < 0.1      
@@ -255,16 +267,19 @@ get_nhdplusv2_domain_check_df <- function(new_ms, old_ms, new_net, old_net, nhdp
     filter(LevelPathI %in% matches_diff_dm$old_lp) |>
     hydroloom::st_compatibalize(matches_diff_dm)
   
-  matches_diff_dm$diff_dist <- sf::st_distance(hydroloom::get_node(matches_diff_dm_old),
-                                               hydroloom::get_node(matches_diff_dm), 
-                                               by_element = TRUE)
-  
-  rm(matches_diff_dm_old)
-  
-  matches_diff_dm$lengthm <- sf::st_length(matches_diff_dm)
-  matches_diff_dm$diff <- as.numeric(matches_diff_dm$diff_dist / matches_diff_dm$lengthm)
-  
-  matches_diff_dm <- filter(matches_diff_dm, diff < 0.1)
+  if(nrow(matches_diff_dm_old) > 0) {
+    matches_diff_dm$diff_dist <- sf::st_distance(hydroloom::get_node(matches_diff_dm_old),
+                                                 hydroloom::get_node(matches_diff_dm), 
+                                                 by_element = TRUE)
+    
+    rm(matches_diff_dm_old)
+    
+    matches_diff_dm$lengthm <- sf::st_length(matches_diff_dm)
+    matches_diff_dm$diff <- as.numeric(matches_diff_dm$diff_dist / matches_diff_dm$lengthm)
+    
+    matches_diff_dm <- filter(matches_diff_dm, diff < 0.1)
+    
+  }
   
   check_df <- filter(check_df, !old_lp %in% matches_diff_dm$old_lp)
   
