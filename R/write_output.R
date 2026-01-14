@@ -1,5 +1,5 @@
-write_lookups <- function(mainstems, enhd_v2) {
-  enhd_v2 <- arrow::read_parquet(enhd_v2)
+write_lookups <- function(mainstems, enhd_v3) {
+  enhd <- arrow::read_parquet(enhd_v3)
   
   out <- sf::st_drop_geometry(mainstems) |>
     filter(!superseded) |>
@@ -10,9 +10,9 @@ write_lookups <- function(mainstems, enhd_v2) {
            outlet_nhdpv2_COMID = as.numeric(gsub("https://geoconnex.us/nhdplusv2/comid/",
                                                "",
                                                outlet_nhdpv2_COMID))) |>
-    left_join(distinct(select(enhd_v2, comid, levelpathi)),
+    left_join(distinct(select(enhd, comid, levelpathi)),
               by = c("head_nhdpv2_COMID" = "comid")) |>
-    left_join(distinct(select(enhd_v2, comid, levelpathi)),
+    left_join(distinct(select(enhd, comid, levelpathi)),
               by = "levelpathi")
   
   out <- group_by(out, levelpathi) |>

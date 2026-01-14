@@ -7,6 +7,7 @@
 # old_net <- tar_read("enhd_v2")
 # new_net <- tar_read("enhd_v3")
 # ref_net <- tar_read("ref_net_v1")
+# source("R/get_data.R")
 
 # loads comparison tables to check if headwater and outlet pairs are comparable
 # returns cases where headwater / outlet pairs do not match
@@ -64,7 +65,7 @@ reconcile_mainstems <- function(old_ms, new_ms, old_net, new_net, ref_net) {
   new_lp <- nhdplushr_ref_net$lp_mainstem_v3[!is.na(nhdplushr_ref_net$lp_mainstem_v3) & 
                                                !nhdplushr_ref_net$lp_mainstem_v3 %in% new_ms$lp_mainstem_v3]
   
-  stopifnot(all(new_lp > 7000000))
+  stopifnot(all(new_lp > 7e6))
   
   # these are all the mainstems that are staying the same
   keep <- dplyr::filter(new_ms, !is.na(reference_mainstem) & !reference_mainstem %in% deprecate$reference_mainstem)
@@ -86,7 +87,8 @@ reconcile_mainstems <- function(old_ms, new_ms, old_net, new_net, ref_net) {
               nhdphr_source_replace = nhdphr_source_replace,
               nhdphr_source_new = nhdphr_source_new,
               deprecate = deprecate,
-              changelog = changelog))
+              changelog = changelog,
+              new_lp = new_lp))
 }
 
 # investigates the lp_mainstem_v3 
@@ -107,10 +109,10 @@ get_nhdplushr_domain_check_df <- function(nhdplushr_ref_net, old_ms, old_net, ne
   new_ms_no_v2 <- filter(new_ms_no_v2, lp_mainstem_v3 %in% nhdplushr_ref_net$lp_mainstem_v3 & !is.na(reference_mainstem))
   
   # nhdplushr_ref_net candidates to replace them
-  nhdplushr_ref_net <- filter(nhdplushr_ref_net, lp_mainstem_v3 %in% new_ms_no_v2$lp_mainstem_v3)
+  nhdplushr_ref_net <- filter(nhdplushr_ref_net, lp_mainstem_v3 %in% new_ms_no_v2$lp_mainstem_v3 | lp_mainstem_v3 > 7e6)
   
   # we have for sure accounted for all reference mainstems in new_ms_no_v2
-  stopifnot(all(nhdplushr_ref_net$reference_mainstem %in% new_ms_no_v2$reference_mainstem))
+  stopifnot(all(nhdplushr_ref_net$reference_mainstem %in% new_ms_no_v2$reference_mainstem | nhdplushr_ref_net$lp_mainstem_v3 > 7e6))
   
   nhdplushr_ref_net <- arrange(nhdplushr_ref_net, reference_mainstem) |>
     group_by(reference_mainstem) |>

@@ -9,8 +9,9 @@
 # new_net <- tar_read("ref_net_v1")
 # changes <- tar_read("reconciled_mainstems")
 # out_f <- "out/mainstems_new.gpkg"
+# source("R/get_data.R")
 
-make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes, out_f) {
+make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes, out_f, lpv3_lookup_file = "out/lpv3_lookup.csv") {
   old_ms <- sf::read_sf(old_ms)
   new_ms <- get_mainstem_summary_v3(new_ms)
   ref_rivers <- sf::read_sf(ref_rivers)
@@ -18,8 +19,6 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   enhd_v3 <- arrow::read_parquet(enhd_v3)
   
   stopifnot(all(new_net$toid == "" | new_net$toid %in% new_net$id)) # verify that all outlets are ""
-  
-  new_net <- new_net[new_net$id != "nhdpv2-947020332",]
   
   # we are only considering where lp_mainstem_v3 is populated
   # NOTE that some lp_mainstem_v3 values in this are newly introduced and will not join 
@@ -179,8 +178,35 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   stopifnot(!any(!is.na(ms_out$id) & duplicated(ms_out$id)))
 
   ### need to get geometry from new_net for the two nhdphr_source changes sets
-      
-  nhdphr_source <- filter(new_net, lp_mainstem_v3 %in% c(changes$nhdphr_source_replace$lp_mainstem_v3, changes$nhdphr_source_new$lp_mainstem_v3)) |>
+
+  nhdphr_source_extra <-  sf::st_drop_geometry(new_net) |>
+    mutate(lp_mainstem_v3 = as.numeric(lp_mainstem_v3)) |>
+    filter(lp_mainstem_v3 > 7e6)
+
+  common_name <- select(nhdphr_source_extra, lp_mainstem_v3, gnis_name) |>
+    filter(gnis_name != "" & !is.na(gnis_name)) |>
+    add_count(lp_mainstem_v3, gnis_name) |>
+    group_by(lp_mainstem_v3) |>
+    mutate(common_name = gnis_name[n == max(n)][1]) |>
+    select(-all_of(c("n", "gnis_name"))) |>
+    ungroup() |>
+    distinct()
+  
+  nhdphr_source_extra <- left_join(nhdphr_source_extra, common_name, by = "lp_mainstem_v3") |>
+    group_by(lp_mainstem_v3) |>
+    summarize(lp_mainstem_v3 = lp_mainstem_v3[1],
+              name_at_outlet = gnis_name[n()],
+              common_GNIS_NAME = common_name[1],
+              head_nhdplushr_id = id[1],
+              outlet_nhdplushr_id = id[n()],
+              lengthkm = sum(length_km),
+              outlet_drainagearea_sqkm = total_da_sqkm[1])
+  
+  ms_out <- bind_rows(ms_out, nhdphr_source_extra)
+        
+  nhdphr_source <- filter(new_net, lp_mainstem_v3 %in% c(changes$nhdphr_source_replace$lp_mainstem_v3, 
+                                                         changes$nhdphr_source_new$lp_mainstem_v3, 
+                                                         nhdphr_source_extra$lp_mainstem_v3)) |>
     mutate(lp_mainstem_v3 = as.numeric(lp_mainstem_v3))
   
   # verify that we have things all lined up
@@ -250,6 +276,14 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   ms_out <- left_join(ms_out, dm,
                       by = "lp_mainstem_v3")
   
+  lpv3_lookup <- st_drop_geometry(ms_out) |>
+    filter(!superseded) |>
+    select(uri, lp_mainstem_v3) |>
+    distinct() |>
+    filter(lp_mainstem_v3 < 700000)
+  
+  readr::write_csv(lpv3_lookup, lpv3_lookup_file)
+  
   ms_out <- ms_out |>
     mutate(type = "['https://www.opengis.net/def/schema/hy_features/hyf/HY_FlowPath', 'https://www.opengis.net/def/schema/hy_features/hyf/HY_WaterBody']",
            primary_name = common_GNIS_NAME,
@@ -270,9 +304,12 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
            encompassing_mainstem_basins = down_levelpaths,
            name_at_outlet, 
            name_at_outlet_gnis_id, 
-           head_nhdpv2_COMID, outlet_nhdpv2_COMID, 
-           head_nhdpv2HUC12, outlet_nhdpv2HUC12, 
+           primary_name, primary_name_gnis_id,
            lengthkm, outlet_drainagearea_sqkm,
+           head_nhdpv2_COMID, outlet_nhdpv2_COMID, 
+           head_nhdplushr_id, outlet_nhdplushr_id,
+           head_nhd_permid, outlet_nhd_permid,
+           head_nhdpv2HUC12, outlet_nhdpv2HUC12, 
            head_rf1ID, outlet_rf1ID, 
            head_nhdpv1_COMID, outlet_nhdpv1_COMID, 
            head_2020HUC12, outlet_2020HUC12,
@@ -365,3 +402,4 @@ merge_ms <- function(x) {
   st_sf(lp_mainstem_v3 = ids,
         geom = geoms)  
 }
+
