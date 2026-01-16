@@ -1,14 +1,14 @@
 reference mainstems v3
 ========================
 
-Overall, 33731 of 33890 mainstem ids are being kept from V2 to V3. 
+Overall, 33738 of 33900 mainstem ids are being kept from V2 to V3. 
 
-The 161 (less than 0.05%) mainstems ids that are being retired are all in transboundary basins 
+The 152 (less than 0.05%) mainstems ids that are being retired are all in transboundary basins 
 where NHDPlusHR geometry is replacing mainstems derived from NHDPlusV2. All mainstems that are
 being retired have been manually reviewed and new mainstems that superseded them have been 
 identified and are listed in their attributes. 
 
-The primary change in reference mainstems v3 is the addition of about 847k (846966) mainstem identifiers.
+The primary change in reference mainstems v3 is the addition of about 847k (846961) mainstem identifiers.
 The added mainstems are derived from "Mainstem Rivers of the Conterminous United 
 States (Version 3.0)" data release (https://doi.org/10.5066/P13LNDDQ). Criteria 
 used to determine additions were that a headwater and outlet flowline and the path
