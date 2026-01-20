@@ -36,6 +36,7 @@ list(
                                        ref_net_v1,
                                        reconciled_mainstems,
                                        "out/mainstems.gpkg")),
+  tar_target(non_ref_mainstems, make_nonref(mainstems, ref_net_v1)),
   tar_target(lookup, write_lookups(mainstems, enhd_v3)),
   tar_target(registry, build_registry(mainstems, 
                                       registry = registry_file,

@@ -72,6 +72,12 @@ Sixteen mainstems have been added that are in NHDPlusHR but fully in Canada
 and do not connect to the NHDPlusV2 domain. They have been included to ensure 
 rivers that eminate from the NHDPlusV2 domain connect to a complete network.
 
+Where mainstems were deprecated and marked superseded, ### new reference mainstems
+were wintroduced. The deprecated mainstems are now marked "superseded: true" and
+the "new_mainstemid" attribute has been populated with current mainstems 
+(superseded: false) that should be considered as replacements. The majority of these
+are cases where the NHDPlusHR does not connect where NHDPlusV2 did connect.
+
 reference mainstems v2
 ========================
 

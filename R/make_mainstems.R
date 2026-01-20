@@ -8,7 +8,8 @@
 # ref_rivers <- tar_read("ref_rivers_v21")
 # new_net <- tar_read("ref_net_v1")
 # changes <- tar_read("reconciled_mainstems")
-# out_f <- "out/mainstems_new.gpkg"
+# out_f <- "out/mainstems.gpkg"
+# lpv3_lookup_file <- "out/lpv3_lookup.csv"
 # source("R/get_data.R")
 
 make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes, out_f, lpv3_lookup_file = "out/lpv3_lookup.csv") {
@@ -23,33 +24,34 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   # we are only considering where lp_mainstem_v3 is populated
   # NOTE that some lp_mainstem_v3 values in this are newly introduced and will not join 
   # to the v2 enhd network.
-  new_net <- filter(new_net, !is.na(lp_mainstem_v3))
+  new_net_nolp <- filter(sf::st_drop_geometry(new_net), !is.na(lp_mainstem_v3))
   
   # add down levelpath to reference network
-  new_net <- left_join(new_net, distinct(select(st_drop_geometry(new_net), 
-                                                id, dnlpv3 = lp_mainstem_v3)), 
-                       by = c("toid" = "id"))
-
+  new_net_nolp <- left_join(new_net_nolp, distinct(select(st_drop_geometry(new_net_nolp), 
+                                                          id, dnlpv3 = lp_mainstem_v3)), 
+                            by = c("toid" = "id"))
+  
   ################# 
   # work out downstream mainstems using new_net as the source for consistency
   # these are where the dnlpv3 is NA but the network connects. 
   # we don't want to keep mainstems like this.
   #################
   
-  disconnected <- new_net[new_net$toid != "" & is.na(new_net$dnlpv3),]
+  disconnected <- new_net_nolp$id[new_net_nolp$toid != "" & is.na(new_net_nolp$dnlpv3) & new_net_nolp$lp_mainstem_v3 < 7e6]
   
   # get all the network above these disconnects
-  above_disconnect <- unlist(hydroloom::navigate_network_dfs(new_net, disconnected$id, direction = "up"))
+  above_disconnect <- unlist(hydroloom::navigate_network_dfs(new_net_nolp, disconnected, direction = "up"))
 
-  # used for manual inspection 28k features on 1/8/26
-  remove <- filter(new_net, id %in% above_disconnect)
+  avoid <- new_net_nolp$id[as.numeric(new_net_nolp$lp_mainstem_v3) > 7e6]
   
-  new_net <- filter(new_net, !id %in% remove$id)
+  remove <- filter(new_net_nolp, id %in% above_disconnect & !id %in% avoid)
   
-  # validate this fix
-  stopifnot(nrow(new_net[new_net$toid != "" & is.na(new_net$dnlpv3),]) == 0)
+  new_net_nolp <- filter(new_net_nolp, !id %in% remove$id)
   
-  new_dm <- distinct(select(st_drop_geometry(new_net), 
+  # validate this fix 5 on 1/19/26
+  stopifnot(nrow(new_net_nolp[new_net_nolp$toid != "" & is.na(new_net_nolp$dnlpv3),]) >= 5)
+  
+  new_dm <- distinct(select(new_net_nolp, 
                             dnlpv3, lp_mainstem_v3)) |>
     mutate(dnlpv3 = tidyr::replace_na(as.numeric(dnlpv3), 0),
            lp_mainstem_v3 = as.numeric(lp_mainstem_v3)) |>
@@ -71,8 +73,8 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   
   dup_down_match <- filter(dup_down, dnlpv3 == dnlpv3_enhd)
   
-  override <- data.frame(lp_mainstem_v3 = c(148773, 313256, 2589752, 1919814),
-                         dnlpv3 = c(312191, 183508, 2589168, 1919808))
+  override <- data.frame(lp_mainstem_v3 = c(148773, 313256, 2589752, 1919814, 2090617, 2119874, 2599701, 1881754),
+                         dnlpv3 = c(312191, 183508, 2589168, 1919808, 2090618, 2119871, 2592712, 7000028))
   
   dup_down_match <- bind_rows(dup_down_match, override) |>
     select(-dnlpv3_enhd)
@@ -179,7 +181,7 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
 
   ### need to get geometry from new_net for the two nhdphr_source changes sets
 
-  nhdphr_source_extra <-  sf::st_drop_geometry(new_net) |>
+  nhdphr_source_extra <-  new_net_nolp |>
     mutate(lp_mainstem_v3 = as.numeric(lp_mainstem_v3)) |>
     filter(lp_mainstem_v3 > 7e6)
 
@@ -193,6 +195,8 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
     distinct()
   
   nhdphr_source_extra <- left_join(nhdphr_source_extra, common_name, by = "lp_mainstem_v3") |>
+    hydroloom::add_topo_sort() |>
+    arrange(desc(topo_sort)) |> 
     group_by(lp_mainstem_v3) |>
     summarize(lp_mainstem_v3 = lp_mainstem_v3[1],
               name_at_outlet = gnis_name[n()],
@@ -203,7 +207,9 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
               outlet_drainagearea_sqkm = total_da_sqkm[1])
   
   ms_out <- bind_rows(ms_out, nhdphr_source_extra)
-        
+  
+  new_net$lp_mainstem_v3 <- as.numeric(new_net$lp_mainstem_v3)
+  
   nhdphr_source <- filter(new_net, lp_mainstem_v3 %in% c(changes$nhdphr_source_replace$lp_mainstem_v3, 
                                                          changes$nhdphr_source_new$lp_mainstem_v3, 
                                                          nhdphr_source_extra$lp_mainstem_v3)) |>
@@ -218,7 +224,24 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   
   rm(check)
   
-  nhdphr_source <- merge_ms(nhdphr_source)
+  nhdphr_source <- nhdphr_source |>
+    hydroloom::add_topo_sort() |>
+    select(lp_mainstem_v3, topo_sort) |>
+    arrange(desc(topo_sort)) |> 
+    group_by(lp_mainstem_v3) |>
+    group_split(.keep = TRUE) |>
+    split_number_chunks(80)
+  
+  cl <- parallel::makeCluster(8)
+  
+  on.exit(parallel::stopCluster(cl))
+  
+  ids <- do.call(c, lapply(nhdphr_source, \(x) unique(do.call(c, lapply(x, \(y) y$lp_mainstem_v3)))))
+  
+  nhdphr_source <- do.call(c, pbapply::pblapply(nhdphr_source, collapse_lines, cl = cl))
+  
+  nhdphr_source <- st_sf(lp_mainstem_v3 = ids,
+                         geom = nhdphr_source)  
   
   ms_out$geom[match(nhdphr_source$lp_mainstem_v3, ms_out$lp_mainstem_v3)] <- nhdphr_source$geom
   
@@ -250,7 +273,7 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
     more <- new_dm$lp_mainstem_v3[new_dm$dnlpv3 %in% more]
   }
   
-  remove <- filter(ms_out, lp_mainstem_v3 %in% to_remove)
+  remove <- filter(ms_out, lp_mainstem_v3 < 7e6 & lp_mainstem_v3 %in% to_remove)
 
   sf::write_sf(remove, "temp.gpkg", "remove_2")
   
@@ -318,7 +341,8 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   
     ms_out <- mutate_if(ms_out, is.character, ~tidyr::replace_na(.,""))
   
-  ms_out <- sf::st_transform(ms_out, 4326)
+    if(sf::st_crs(ms_out) != sf::st_crs(4326))
+      ms_out <- sf::st_transform(ms_out, 4326)
   
   sf::write_sf(ms_out, out_f)
   
@@ -365,6 +389,19 @@ split_number_chunks <- function(x, n) {
   split(x, cut(seq_along(x), n, labels = FALSE))
 }
 
+collapse_lines <- function(g) {
+  
+  get_single_line <- function(gg) {
+    sf::st_sfc(
+      sf::st_linestring(
+        sf::st_coordinates(sf::st_geometry(gg))[, 1:2]), 
+      crs = sf::st_crs(gg))
+  }
+  
+  do.call(c, lapply(g, get_single_line))
+  
+}
+
 merge_ms <- function(x) {
   rows <- nrow(x)
   
@@ -382,19 +419,6 @@ merge_ms <- function(x) {
   
   on.exit(parallel::stopCluster(cl))
   
-  collapse_lines <- function(g) {
-    
-    get_single_line <- function(gg) {
-      sf::st_sfc(
-        sf::st_linestring(
-          sf::st_coordinates(sf::st_geometry(gg))[, 1:2]), 
-        crs = sf::st_crs(gg))
-    }
-    
-    do.call(c, lapply(g, get_single_line))
-    
-  }
-  
   geoms <- do.call(c, pbapply::pblapply(geom, collapse_lines, cl = cl))
   
   ids <- do.call(c, lapply(geom, \(x) unique(do.call(c, lapply(x, \(y) y$lp_mainstem_v3)))))
@@ -403,3 +427,58 @@ merge_ms <- function(x) {
         geom = geoms)  
 }
 
+# library(targets)
+# library(dplyr)
+# mainstems <- sf::read_sf("out/mainstems.gpkg", "mainstems")
+# new_net <- tar_read("ref_net_v1")
+make_nonref <- function(mainstems, new_net, out_f = "out/extra_mainstems.gpkg") {
+  new_net <- sf::read_sf(new_net)
+
+  extra_geom <- dplyr::bind_rows(new_net[new_net$source == "nhdphr" & is.na(new_net$lp_mainstem_v3),], 
+                                 new_net[new_net$source == "nhdpv2" & is.na(new_net$reference_mainstem),]) |>
+    hydroloom::add_topo_sort() |>
+    mutate(levelpath = paste0(vector_proc_unit, levelpath)) |>
+    arrange(desc(topo_sort)) |>
+    select(-vector_proc_unit, -topo_sort)
+  
+  out <- sf::st_drop_geometry(extra_geom) |>
+    select(id, toid, levelpath, length_km, total_da_sqkm, gnis_name)
+  
+  common_name <- select(out, levelpath, gnis_name) |>
+    filter(gnis_name != "" & !is.na(gnis_name)) |>
+    add_count(levelpath, gnis_name) |>
+    group_by(levelpath) |>
+    mutate(common_name = gnis_name[n == max(n)][1]) |>
+    select(-all_of(c("n", "gnis_name"))) |>
+    ungroup() |>
+    distinct()
+  
+  out <- left_join(out, common_name, by = "levelpath") |>
+    group_by(levelpath) |>
+    summarize(levelpath = levelpath[1],
+              name_at_outlet = gnis_name[n()],
+              common_GNIS_NAME = common_name[1],
+              head_id = id[1],
+              outlet_id = id[n()],
+              lengthkm = sum(length_km),
+              outlet_drainagearea_sqkm = total_da_sqkm[1])
+    
+  extra_geom <- extra_geom |>
+    select(levelpath) |>
+    group_by(levelpath) |>
+    group_split(.keep = TRUE) |>
+    split_number_chunks(80)
+  
+  cl <- parallel::makeCluster(12)
+  on.exit(parallel::stopCluster(cl))
+  
+  ids <- do.call(c, lapply(extra_geom, \(x) unique(do.call(c, lapply(x, \(y) y$levelpath)))))
+
+  extra_geom <- do.call(c, pbapply::pblapply(extra_geom, collapse_lines, cl = cl))
+  
+  out <- left_join(out, sf::st_sf(levelpath = ids,
+                              geom = extra_geom),
+                   by = "levelpath")  
+  
+  sf::write_sf(out, out_f)
+}
