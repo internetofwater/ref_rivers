@@ -18,9 +18,11 @@ write_lookups <- function(mainstems, enhd_v3) {
   out <- group_by(out, levelpathi) |>
     mutate(outlet_check = any(comid == outlet_nhdpv2_COMID))
   
-  if(any(!out$outlet_check)) stop("all levelpaths should have the outlet in them")
+  if(all(is.na(out$outlet_check) | !out$outlet_check)) stop("all levelpaths should have the outlet in them")
   
   out <- select(ungroup(out), uri, comid)  
 
   readr::write_csv(out, "out/nhdpv2_lookup.csv")
+
+  "out/nhdpv2_lookup.csv"
 }

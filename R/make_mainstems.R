@@ -21,6 +21,19 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   
   stopifnot(all(new_net$toid == "" | new_net$toid %in% new_net$id)) # verify that all outlets are ""
   
+  add_extra <- readr::read_csv("data/review/deprecated_lookup.csv")
+
+  stopifnot(all(add_extra$head_nhdphr_permid %in% new_net$id))
+
+  # only keep where there is no lp_mainstem_v3
+  add_extra <- filter(add_extra, head_nhdphr_permid %in% new_net$id[is.na(new_net$lp_mainstem_v3)])
+
+  add_lps <- unique(new_net$levelpath[new_net$id %in% add_extra$head_nhdphr_permid])
+
+  add_lps <- data.frame(levelpath = add_lps, lp_mainstem_v3 = as.character(seq(8e6, 8e6 + length(add_lps) - 1)))
+
+  new_net <- dplyr::rows_update(as.data.frame(new_net), add_lps, by = "levelpath") |> sf::st_sf()
+
   # we are only considering where lp_mainstem_v3 is populated
   # NOTE that some lp_mainstem_v3 values in this are newly introduced and will not join 
   # to the v2 enhd network.
@@ -73,8 +86,8 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   
   dup_down_match <- filter(dup_down, dnlpv3 == dnlpv3_enhd)
   
-  override <- data.frame(lp_mainstem_v3 = c(148773, 313256, 2589752, 1919814, 2090617, 2119874, 2599701, 1881754),
-                         dnlpv3 = c(312191, 183508, 2589168, 1919808, 2090618, 2119871, 2592712, 7000028))
+  override <- data.frame(lp_mainstem_v3 = c(148773, 313256, 2589752, 1919814, 2090617, 2119874, 2599701, 1881754, 8000017, 8000086, 8000092, 8000013, 8000076, 8000081, 8000012, 8000075, 8000080),
+                         dnlpv3 = c(312191, 183508, 2589168, 1919808, 2090618, 2119871, 2592712, 7000028, 0, 0, 0, 0, 0, 0, 0, 0, 0))
   
   dup_down_match <- bind_rows(dup_down_match, override) |>
     select(-dnlpv3_enhd)
@@ -204,7 +217,8 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
               head_nhdplushr_id = id[1],
               outlet_nhdplushr_id = id[n()],
               lengthkm = sum(length_km),
-              outlet_drainagearea_sqkm = total_da_sqkm[1])
+              outlet_drainagearea_sqkm = total_da_sqkm[1],
+              superseded = FALSE)
   
   ms_out <- bind_rows(ms_out, nhdphr_source_extra)
   
@@ -287,8 +301,13 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   rm(new_net)
   rm(new_dm)
     
-  ms_out <- add_dm(ms_out)
+  new_down <- add_dm(ms_out[!ms_out$superseded,])[["down_levelpaths"]]
+  new_down[is.na(new_down)] <- ""
   
+  ms_out$down_levelpaths <- ""
+  
+  ms_out$down_levelpaths[!ms_out$superseded] <- new_down
+
   dm <- select(st_drop_geometry(ms_out), 
                downstream_mainstem_id = uri, lp_mainstem_v3) |>
     filter(!is.na(lp_mainstem_v3)) |>
@@ -344,7 +363,7 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
     if(sf::st_crs(ms_out) != sf::st_crs(4326))
       ms_out <- sf::st_transform(ms_out, 4326)
   
-  sf::write_sf(ms_out, out_f)
+  sf::write_sf(ms_out, out_f, "mainstems")
   
   ms_out
 }
@@ -362,7 +381,7 @@ add_dm <- function(network) {
   get_dlp <- function(x, dnlp) {
     out <- dnlp[x]
     
-    if(out == 0) {
+    if(is.na(out) || out == 0) {
       return()
     }
     
@@ -373,7 +392,7 @@ add_dm <- function(network) {
   all_lp <- unique(lp$levelpathi)
   
   all_lp <- pbapply::pblapply(all_lp, get_dlp, dnlp = dnlp)
-  
+
   all_lp <- data.frame(levelpathi = unique(lp$levelpathi),
                        dnlp = sapply(all_lp, function(x) if(length(x) > 0) {
                          paste0("['", paste(paste0("https://geoconnex.us/ref/mainstems/", x), 
@@ -429,13 +448,18 @@ merge_ms <- function(x) {
 
 # library(targets)
 # library(dplyr)
+# library(sf)
 # mainstems <- sf::read_sf("out/mainstems.gpkg", "mainstems")
 # new_net <- tar_read("ref_net_v1")
-make_nonref <- function(mainstems, new_net, out_f = "out/extra_mainstems.gpkg") {
+# lookup <- "out/nhdpv2_lookup.csv"
+make_nonref <- function(mainstems, new_net, lookup, out_f = "out/extra_mainstems.gpkg") {
   new_net <- sf::read_sf(new_net)
+  lookup <- readr::read_csv(lookup)
+  
+  lookup$id <- paste0("nhdpv2-", lookup$comid)
 
   extra_geom <- dplyr::bind_rows(new_net[new_net$source == "nhdphr" & is.na(new_net$lp_mainstem_v3),], 
-                                 new_net[new_net$source == "nhdpv2" & is.na(new_net$reference_mainstem),]) |>
+                                 new_net[new_net$source == "nhdpv2" & !new_net$id %in% lookup$id,]) |>
     hydroloom::add_topo_sort() |>
     mutate(levelpath = paste0(vector_proc_unit, levelpath)) |>
     arrange(desc(topo_sort)) |>
@@ -480,5 +504,5 @@ make_nonref <- function(mainstems, new_net, out_f = "out/extra_mainstems.gpkg") 
                               geom = extra_geom),
                    by = "levelpath")  
   
-  sf::write_sf(out, out_f)
+  sf::write_sf(out, out_f, "extra_mainstems")
 }
