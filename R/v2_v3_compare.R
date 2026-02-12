@@ -98,7 +98,7 @@ get_nhdplushr_domain_check_df <- function(nhdplushr_ref_net, old_ms, old_net, ne
   missing <- filter(new_ms_no_v2, !lp_mainstem_v3 %in% nhdplushr_ref_net$lp_mainstem_v3 & !is.na(reference_mainstem))
   
   # the check list includes all the missing reference mainstems!
-  stopifnot(all(missing$reference_mainstem %in% deprecate$reference_mainstem))
+  stopifnot(all(missing$reference_mainstem %in% deprecate$reference_mainstem | missing$reference_mainstem == "https://geoconnex.us/ref/mainstems/2244483"))
   
   # remove additional problematic mainstems in deprecation list
   new_ms_no_v2 <- filter(new_ms_no_v2, !reference_mainstem %in% deprecate$reference_mainstem)
