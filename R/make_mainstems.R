@@ -106,7 +106,10 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   # must have all to navigate to
   stopifnot(all(new_dm$dnlpv3 == 0 | new_dm$dnlpv3 %in% new_dm$lp_mainstem_v3))
   
-  sf::write_sf(remove, "temp.gpkg", "disconnect_1")
+  # these removals are only removed from the network of flowlines that are 
+  # used for completely new mainstems. It has very little affect on the ultimate output
+  # remove <- left_join(remove, select(new_net, id), by = "id")
+  # sf::write_sf(remove, "temp.gpkg", "disconnect_1")
   
   ##################
   # reconcile and compile sources of mainstems
@@ -150,7 +153,10 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   changes$nhdphr_source_new$superseded <- FALSE
   
   changes$add <- filter(changes$add, !lp_mainstem_v3 %in% changes$nhdphr_source_new$lp_mainstem_v3)
-  
+
+  pass_on$head_nhdpv2_COMID <- paste0("https://geoconnex.us/nhdplusv2/comid/", trimws(format(as.integer(gsub("https://geoconnex.us/nhdplusv2/comid/", "", pass_on$head_nhdpv2_COMID)), scientific = FALSE), "both"))
+  pass_on$outlet_nhdpv2_COMID <- paste0("https://geoconnex.us/nhdplusv2/comid/", trimws(format(as.integer(gsub("https://geoconnex.us/nhdplusv2/comid/", "", pass_on$outlet_nhdpv2_COMID)), scientific = FALSE), "both"))
+
   # bind together changes and get into schema of pass_on
   ms_out <- bind_rows(
     
@@ -165,9 +171,9 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
               hydroloom::st_compatibalize(changes$nhdphr_source_new, changes$keep)) |>
     mutate(id = as.integer(gsub("https://geoconnex.us/ref/mainstems/", "", reference_mainstem)),
            head_nhdpv2_COMID = ifelse(is.na(head_nhdpv2_COMID), "", 
-                                      paste0("https://geoconnex.us/nhdplusv2/comid/", head_nhdpv2_COMID)),
+                                      paste0("https://geoconnex.us/nhdplusv2/comid/", trimws(format(as.integer(head_nhdpv2_COMID), scientific = FALSE), "both"))),
            outlet_nhdpv2_COMID = ifelse(is.na(outlet_nhdpv2_COMID), "", 
-                                        paste0("https://geoconnex.us/nhdplusv2/comid/", outlet_nhdpv2_COMID)),
+                                        paste0("https://geoconnex.us/nhdplusv2/comid/", trimws(format(as.integer(outlet_nhdpv2_COMID), scientific = FALSE), "both"))),
            head_nhdpv2HUC12 = ifelse(is.na(head_nhdpv2HUC12), "", 
                                      paste0("https://geoconnex.us/nhdplusv2/huc12/", head_nhdpv2HUC12)),
            outlet_nhdpv2HUC12 = ifelse(is.na(outlet_nhdpv2HUC12), "", 
@@ -275,6 +281,8 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   ms_out <- left_join(ms_out, new_dm, by = c("lp_mainstem_v3")) |>
     mutate(levelpathi = lp_mainstem_v3, dnlevelpat = ifelse(is.na(dnlpv3), 0, dnlpv3))
   
+  ms_out$dnlevelpat[!is.na(ms_out$outlet_nhd_permid) & ms_out$outlet_nhd_permid %in% c("155395996", "a9ee0d00-22f4-44eb-a3d9-e95446a6bac6")] <- 0
+
   missing <- ms_out[!(ms_out$dnlevelpat == 0 | ms_out$dnlevelpat %in% ms_out$levelpathi),]
   
   to_remove <- missing$levelpathi
@@ -330,14 +338,10 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
     mutate(type = "['https://www.opengis.net/def/schema/hy_features/hyf/HY_FlowPath', 'https://www.opengis.net/def/schema/hy_features/hyf/HY_WaterBody']",
            primary_name = common_GNIS_NAME,
            primary_name_gnis_id = common_GNIS_ID,
-           head_nhdpv2_COMID = ifelse(is.na(head_nhdpv2_COMID), "", 
-                                      paste0("https://geoconnex.us/nhdplusv2/comid/", head_nhdpv2_COMID)),
-           outlet_nhdpv2_COMID = ifelse(is.na(outlet_nhdpv2_COMID), "", 
-                                        paste0("https://geoconnex.us/nhdplusv2/comid/", outlet_nhdpv2_COMID)),
-           head_nhdpv2HUC12 = ifelse(is.na(head_nhdpv2HUC12), "", 
-                                     paste0("https://geoconnex.us/nhdplusv2/huc12/", head_nhdpv2HUC12)),
-           outlet_nhdpv2HUC12 = ifelse(is.na(outlet_nhdpv2HUC12), "", 
-                                       paste0("https://geoconnex.us/nhdplusv2/huc12/", outlet_nhdpv2HUC12)),
+           head_nhdpv2_COMID = head_nhdpv2_COMID,
+           outlet_nhdpv2_COMID = outlet_nhdpv2_COMID,
+           head_nhdpv2HUC12 = head_nhdpv2HUC12,
+           outlet_nhdpv2HUC12 = outlet_nhdpv2HUC12,
            superseded = ifelse(is.na(superseded), FALSE, superseded)) |>
     mutate(new_mainstemid = ifelse(new_mainstemid == "NA", "", new_mainstemid)) |>
     select(id, uri,
@@ -357,11 +361,19 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
            head_2020HUC12, outlet_2020HUC12,
            superseded, new_mainstemid) %>%
     mutate(id = as.character(id))
+
+  length <- as.numeric(units::set_units(sf::st_length(ms_out), "km"))
+
+  ms_out$lengthkm <- ifelse(ms_out$lengthkm < length, length, ms_out$lengthkm)
+
+  ms_out$primary_name_gnis_id <- ifelse(is.na(ms_out$primary_name_gnis_id), "", paste0("https://geoconnex.us/usgs/gnis/", ms_out$primary_name_gnis_id))
+  ms_out$name_at_outlet_gnis_id <- ifelse(is.na(ms_out$name_at_outlet_gnis_id), "", paste0("https://geoconnex.us/usgs/gnis/", ms_out$name_at_outlet_gnis_id))
+ 
   
-    ms_out <- mutate_if(ms_out, is.character, ~tidyr::replace_na(.,""))
+  ms_out <- mutate_if(ms_out, is.character, ~tidyr::replace_na(.,""))
   
-    if(sf::st_crs(ms_out) != sf::st_crs(4326))
-      ms_out <- sf::st_transform(ms_out, 4326)
+  if(sf::st_crs(ms_out) != sf::st_crs(4326))
+    ms_out <- sf::st_transform(ms_out, 4326)
   
   sf::write_sf(ms_out, out_f, "mainstems")
   
@@ -505,4 +517,59 @@ make_nonref <- function(mainstems, new_net, lookup, out_f = "out/extra_mainstems
                    by = "levelpath")  
   
   sf::write_sf(out, out_f, "extra_mainstems")
+}
+
+validate_mainstems <- function(ms_out) {
+  
+  # must be 4326
+  stopifnot(sf::st_crs(ms_out) == sf::st_crs(4326))
+  
+  # must be LINESTRING
+  stopifnot(sf::st_geometry_type(ms_out, by_geometry = FALSE) == "LINESTRING")
+  
+  # expect ID to be in character format
+  stopifnot(is.character(ms_out$id))
+  
+  # names need to include all of these (geometry has been removed)
+  stopifnot(all(c(
+    "id", "uri", "featuretype", "downstream_mainstem_id", "encompassing_mainstem_basins", 
+"name_at_outlet", "name_at_outlet_gnis_id", "primary_name", "primary_name_gnis_id", 
+"lengthkm", "outlet_drainagearea_sqkm", "head_nhdpv2_COMID", 
+"outlet_nhdpv2_COMID", "head_nhdplushr_id", "outlet_nhdplushr_id", 
+"head_nhd_permid", "outlet_nhd_permid", "head_nhdpv2HUC12", "outlet_nhdpv2HUC12", 
+"head_rf1ID", "outlet_rf1ID", "head_nhdpv1_COMID", "outlet_nhdpv1_COMID", 
+"head_2020HUC12", "outlet_2020HUC12", "superseded", "new_mainstemid") %in% names(ms_out)))
+ 
+  check_uri <- function(x, rgx, missing = "") {
+
+    if(isFALSE(missing)) {
+      stopifnot(all(grepl(rgx, x)))
+    } else {
+      stopifnot(all(grepl(rgx, x) | x == missing))
+    }
+  }
+  
+  # URI checks
+  check_uri(ms_out$uri, "https://geoconnex\\.us/ref/mainstems/\\d+$", FALSE)
+  check_uri(ms_out$name_at_outlet_gnis_id, "https://geoconnex\\.us/usgs/gnis/\\d+$", "")
+  check_uri(ms_out$primary_name_gnis_id, "https://geoconnex\\.us/usgs/gnis/\\d+$", "")
+  check_uri(ms_out$head_nhdpv2_COMID, "https://geoconnex\\.us/nhdplusv2/comid/\\d+$", "")
+  check_uri(ms_out$outlet_nhdpv2_COMID, "https://geoconnex\\.us/nhdplusv2/comid/\\d+$", "") 
+  check_uri(ms_out$head_nhdpv2HUC12, "https://geoconnex\\.us/nhdplusv2/huc12/\\d+$", "")
+  check_uri(ms_out$outlet_nhdpv2HUC12, "https://geoconnex\\.us/nhdplusv2/huc12/\\d+$", "")
+
+  # all new mainstemid must be not superseded
+  stopifnot(!all(unlist(ms_out$new_mainstemid) %in% ms_out$uri[!ms_out$superseded]))
+
+  # all mainstem topology goes to stuff that exists
+  stopifnot(!all(unlist(ms_out$downstream_mainstem_id) %in% ms_out$uri[!ms_out$superseded]))
+  stopifnot(!all(unlist(ms_out$encompassing_mainstem_basins) %in% ms_out$uri[!ms_out$superseded]))
+
+  # length must be positive and less than 5000km
+  stopifnot(all(ms_out$lengthkm > 0 & ms_out$lengthkm < 5000))
+
+  # more lenient on drainage area
+  stopifnot(all(is.na(ms_out$outlet_drainagearea_sqkm) | (ms_out$outlet_drainagearea_sqkm >= 0 & ms_out$outlet_drainagearea_sqkm < 3e6)))
+
+  TRUE
 }

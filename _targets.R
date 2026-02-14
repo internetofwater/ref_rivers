@@ -39,6 +39,7 @@ list(
       reconciled_mainstems,
       "out/mainstems.gpkg")),
   tar_target(lookup, write_lookups(mainstems, enhd_v3), format = "file"),
+  tar_target(validate, validate_mainstems(mainstems)),
   tar_target(non_ref_mainstems, make_nonref(
     mainstems = mainstems, 
     new_net = ref_net_v1, 
