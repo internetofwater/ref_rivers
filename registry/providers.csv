@@ -1,3 +1,5 @@
 id,provider,description
 1,https://doi.org/10.5066/P9W79I7Q,"Updated CONUS river network attributes based on the E2NHDPlusV2 and NWMv2.1 networks"
 2,https://doi.org/10.5066/P976XCVT,"Updated CONUS river network attributes based on the E2NHDPlusV2 and NWMv2.1 networks (version 2.0)"
+3,https://doi.org/10.5066/P13IRYTB,"Updated CONUS river network attributes and geometry based on the NHDPlusV2, E2NHDPlusV2, and NWMv2.1 networks (version 3.0)"
+4,https://doi.org/10.5066/P13V7GVY,"USGS National Hydrography Dataset Plus High Resolution National Release 2"

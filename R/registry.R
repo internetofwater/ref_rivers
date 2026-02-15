@@ -1,64 +1,58 @@
+ms <- tar_read("mainstems")
+registry <- tar_read("registry_file")
+providers <- tar_read("provider_file")
 build_registry <- function(ms, registry, providers) {
-  
-  if(!file.exists(registry)) stop("no registry?")
   
   reg <- readr::read_csv(registry)
   pro <- readr::read_csv(providers)
   
-  ms_id <- gsub("https://geoconnex.us/ref/mainstems/", "", 
-                ms$uri)
+  reg$head <- format(reg$head, scientific = FALSE)
+  reg$out <- format(reg$head, scientific = FALSE)
+
+  ms_id <- gsub("https://geoconnex.us/ref/mainstems/", "", ms$uri)
   
-  head_id <- gsub("https://geoconnex.us/nhdplusv2/comid/", "", 
-                  ms$head_nhdpv2_COMID)
-  
-  out_id <- gsub("https://geoconnex.us/nhdplusv2/comid/", "", 
-                 ms$outlet_nhdpv2_COMID)
-  
-  if(nrow(reg) == 1) {
-    message("initialize")
+  head_id <- ifelse(ms$head_nhdpv2_COMID != "",
+    gsub("https://geoconnex.us/nhdplusv2/comid/", "", ms$head_nhdpv2_COMID),
+    ms$head_nhdplushr_id
+  )
+
+  out_id <- ifelse(ms$outlet_nhdpv2_COMID != "", 
+    gsub("https://geoconnex.us/nhdplusv2/comid/", "", ms$outlet_nhdpv2_COMID), 
+    ms$outlet_nhdplushr_id
+  )
+
+  provider <- ifelse(ms$head_nhdpv2_COMID != "", 3, 4)
+
+  # Must all have values
+  stopifnot(all(head_id != "" & !is.na(head_id)))
+  stopifnot(all(out_id != "") & !is.na(out_id))
+
+  if(nrow(reg) < nrow(ms)) {
     
-    dplyr::tibble(mainstem = ms_id,
-                  head = head_id,
-                  out = out_id, 
-                  provider = 1)
-    
-  } else if(nrow(reg) < nrow(ms)) {
-    
-    if(!all(c("https://doi.org/10.5066/P9W79I7Q", 
-              "https://doi.org/10.5066/P976XCVT") %in% 
-            pro$provider)) {
-      # just being super cautious
-      stop("this will only work with the initial two providers.")
-    }
-    
+    stopifnot(pro$provider[pro$id == 3] == "https://doi.org/10.5066/P13IRYTB")
+    stopifnot(pro$provider[pro$id == 4] == "https://doi.org/10.5066/P13V7GVY")
+
     ms$id <- as.integer(ms$id)
-    
-    message(paste("switching", nrow(ms) - sum(ms$superseded), "to provider 2."))
-    
-    reg <- left_join(reg,
-                     select(sf::st_drop_geometry(ms),
-                            mainstem = id, superseded),
-                     by = "mainstem") |>
-      # superseded stay provider 1 others become provider 2
-      # generally providers will not be changed in the future
-      # but provider 1 was found to be flawed so is being replaced
-      # for exact matches.
-      mutate(provider = ifelse(superseded, 1, 2)) |>
-      select(-superseded)
     
     extra <- !ms$id %in% reg$mainstem
     
     ms_id <- as.integer(ms_id[extra])
-    head_id <- as.integer(head_id[extra])
-    out_id <- as.integer(out_id[extra])
+    head_id <- head_id[extra]
+    out_id <- out_id[extra]
+    provider <- provider[extra]
     
-    message(paste("adding", sum(extra), "rows to registry."))
-    
+    message(paste("adding", sum(provider == 3), "nhdplusv2 rows to registry."))
+    message(paste("adding", sum(provider == 4), "nhdplushr rows to registry."))
+
+    stopifnot(!any(duplicated(ms_id)))
+    stopifnot(!any(duplicated(head_id)))
+    stopifnot(!any(duplicated(out_id)))
+
     bind_rows(reg, 
               dplyr::tibble(mainstem = ms_id,
                             head = head_id,
                             out = out_id, 
-                            provider = 2))
+                            provider = provider))
     
   } else if(nrow(reg) == nrow(ms)) {
     reg
