@@ -1,14 +1,16 @@
 # Reference Rivers for geoconnex.us
 
-This repository houses workflow software for compilation of community reference river features. The output of this workflow will generate Persistent Identifiers for the [geoconnex.us system](https://github.com/internetofwater/geoconnex.us), reference landing page content for the [reference.geoconnex.us system](https://reference.geoconnex.us/), and be used as the basis for persistence in the  [Network Linked Data Index](https://labs.waterdata.usgs.gov/about-nldi/index.html).
+This repository houses workflow software for compilation of community reference river features. The output of this workflow will generate Persistent Identifiers for the [geoconnex.us system](https://github.com/internetofwater/geoconnex.us), reference landing page content for the [reference.geoconnex.us system](https://reference.geoconnex.us/), and be used as the basis for persistence in [3DHP data](https://www.usgs.gov/3d-hydrography-program).
 
-The base dataset that has informed this work so far can be found in the "mainstem summary gpkg" file associated with this data release:
+The current dataset informing this work can be found in the "mainstem_summary.gpkg" file associated with this data release:
 
-> Blodgett, D.L., 2022, Mainstem Rivers of the Conterminous United States: U.S. Geological Survey data release, https://doi.org/10.5066/P9BTKP3T. 
+> David L Blodgett, 2025, Mainstem Rivers of the Conterminous United States (Version 3.0): U.S. Geological Survey data release, https://doi.org/10.5066/P13LNDDQ.
 
-v1.0 of the above dataset was used for initial release of mainstems. A v2.0  of the above dataset was incorporated when this workflow repository was instantiated (December, 2022). [NEWS.md](NEWS.md) will be used for all future modifications.
+Previous versions:
+- v2.0: https://doi.org/10.5066/P92U7ZUT (2023)
+- v1.0: https://doi.org/10.5066/P9BTKP3T (2022) 
 
-> David L Blodgett, 2023, Mainstem Rivers of the Conterminous United States (version 2.0): U.S. Geological Survey data release, https://doi.org/10.5066/P92U7ZUT. 
+Version 3.0 (released January 2026) represents a major expansion of the reference mainstems system, adding 819k new mainstem identifiers while maintaining 33,745 of the original 33,900 mainstems from v2. This release incorporates NHDPlusHR geometry for transboundary basins and ensures network connectivity across NHDPlusV2, NHDPlusHR, and the NHD snapshot used for the 3DHP dataset (https://doi.org/10.5066/P94H0DAG). See [NEWS.md](NEWS.md) for detailed release information.
 
 # Reference mainstem river strategy
 
@@ -20,7 +22,7 @@ See ["Progress Toward a Reference Hydrologic Geospatial Fabric for the United St
 
 ## Summary
 
-In essence, a "mainstem" is defined by three pieces of information.  
+A "mainstem" is defined by three pieces of information.
 1. A headwater location that is at the top of a network.
 1. An outlet location that is terminal or flows to a larger river.
 1. A network of features connecting the headwater and outlet.
@@ -31,6 +33,19 @@ In the registry of mainstems defined here, these three take the form of:
 1. A dataset that the identifiers are defined in.
 
 To be considered for this work, all identifiers are bound to URI namespaces that resolve some description of the features in question.
+
+## Current Status (v3.0 - January 2026)
+
+The reference mainstems registry now includes **850k mainstem identifiers**, representing a significant expansion from the initial 34k mainstems in v1 and v2.
+
+**Key features of v3:**
+- **818,908 new mainstems** based on validation across multiple hydrographic datasets
+- **33,745 active v2 mainstems** retained with full backward compatibility
+- **155 superseded mainstems** (<0.05% of v2) in transboundary basins, replacement identifiers noted in "new_mainstemid" attribute
+- **NHDPlusHR integration** for 39 HU04 basins in transboundary regions (North East, Great Lakes, North Central, North West, South Central, South West, Pacific North West, Pacific South West)
+- **Conservative approach** to network connectivity - approximately 29,000 candidate mainstems omitted pending future releases to ensure network integrity
+
+All superseded mainstems remain with `superseded: true` flag and include `new_mainstemid` attributes pointing to their replacements.
 
 ## Example: 
 

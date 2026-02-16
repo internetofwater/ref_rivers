@@ -1,7 +1,7 @@
 reference mainstems v3
 ========================
 
-The primary change in reference mainstems v3 is the addition of about 847k (846961) mainstem identifiers.
+The primary change in reference mainstems v3 is the addition of about 819k mainstem identifiers.
 New mainstems derive from "Mainstem Rivers of the Conterminous United 
 States (Version 3.0)" data release (https://doi.org/10.5066/P13LNDDQ). Criteria 
 used to determine additions required that a headwater and outlet flowline and the path
@@ -17,12 +17,13 @@ new mainstems that supersede them have been identified and listed in their attri
 
 Superseded mainstems with mainstem ids that replace them can be found in [this file](data/review/deprecated_v3.geojson).
 
-Even though 847k additions were made, the release takes a somewhat conservative approach where downstream 
+Even though 847k additions could be made, only 819k of the candidates were added to reference mainstems.
+The release takes a somewhat conservative approach where downstream 
 connectivity is in question. Any mainstem that matched criteria for inclusion but where 
 downstream connectivity was in question was omitted. This primarily
 affects places where a mainstem flows to a mainstem that did not match the criteria for inclusion and 
 would be isolated in the network of reference mainstems if included at this time. Roughly 
-29k features fit this criteria. Many will be included in a future release as the overall network 
+28k features fit this criteria. Many will be included in a future release as the overall network 
 of mainstems fills out. 
 
 In reference mainstems V3, transboundary basins have been updated significantly. 
