@@ -1,54 +1,52 @@
-#   https://books.ropensci.org/targets/walkthrough.html#inspect-the-pipeline # nolint
-
-# Load packages required to define the pipeline:
 library(targets)
-# library(tarchetypes) # Load other packages as needed. # nolint
 
-# Set target options:
 tar_option_set(
-  packages = c("dplyr", "sf", "sbtools", "nhdplusTools"), # packages that your targets need to run
-  format = "rds" # default storage format
-  # Set other options as needed.
+  packages = c("dplyr", "sf", "sbtools", "nhdplusTools"),
+  format = "rds"
 )
 
 
 if(package_version(packageVersion("nhdplusTools")) < "1.0.1") 
   stop("nhdplusTools version must be greater than 1.0.1")
 
-# tar_make_clustermq() configuration (okay to leave alone):
-options(clustermq.scheduler = "multiprocess")
-
-# tar_make_future() configuration (okay to leave alone):
-# Install packages {{future}}, {{future.callr}}, and {{future.batchtools}} to allow use_targets() to configure tar_make_future() options.
-
-# Run the R scripts in the R/ folder with your custom functions:
 tar_source()
 
-# source("other_functions.R") # Source other scripts as needed. # nolint
-
-# Replace the target list below with your own:
 list(
-  tar_target(name = registry_file, command = "registry/ref_rivers.csv", format = "file"),
-  tar_target(name = provider_file, command = "registry/providers.csv", format = "file"),
-  tar_target(name = mainstems_v1, command = get_mainstems_db_1()),
-  tar_target(name = mainstems_v2, command = get_mainstems_db_2()),
-  tar_target(name = enhd_v1, command = get_enhd_1()),
-  tar_target(name = enhd_v2, command = get_enhd_2()),
-  tar_target(name = nhdp_gdb, command = nhdplusTools::download_nhdplusv2("data/nhdp")),
-  tar_target(name = nhdp_geo, command = sf::read_sf(nhdp_gdb, "NHDFlowline_Network")),
-  tar_target(name = reconciled_mainstems, command = reconcile_mainstems(mainstems_v1, 
-                                                                       mainstems_v2,
-                                                                       enhd_v1,
-                                                                       enhd_v2)),
-  tar_target(name = mainstems, command = make_mainstems(mainstems_v1, 
-                                                        mainstems_v2,
-                                                        enhd_v1,
-                                                        enhd_v2,
-                                                        reconciled_mainstems,
-                                                        "out/mainstems.gpkg")),
-  tar_target(name = lookup, command = write_lookups(mainstems, enhd_v2)),
-  tar_target(name = registry, command = build_registry(mainstems, 
-                                                       registry = registry_file,
-                                                       providers = provider_file)),
-  tar_target(name = write_reg, command = write_registry(registry, registry_file))
+  tar_target(registry_file, "registry/ref_rivers.csv", format = "file"),
+  tar_target(provider_file, "registry/providers.csv", format = "file"),
+  tar_target(mainstems_v1, get_mainstems_db_1()),
+  tar_target(mainstems_v2, get_mainstems_db_2()),
+  tar_target(mainstems_v3, get_mainstems_db_3()),
+  tar_target(enhd_v1, get_enhd_1()),
+  tar_target(enhd_v2, get_enhd_2()),
+  tar_target(enhd_v3, get_enhd_3()),
+  tar_target(ref_rivers_v21, get_ref_rivers(
+    version = "v2.1", 
+    sha256sum = "a9161151f3513206b6d5348c827dca6cbc4df147f8de98847ad1fa1e58a6a099")),
+  tar_target(ref_net_v1, get_ref_network_1()),
+  tar_target(nhdp_gdb, nhdplusTools::download_nhdplusv2("data/nhdp")),
+  tar_target(nhdp_geo, sf::read_sf(nhdp_gdb, "NHDFlowline_Network")),
+  tar_target(reconciled_mainstems, reconcile_mainstems(mainstems_v2, 
+    mainstems_v3,
+    enhd_v2,
+    enhd_v3, 
+    ref_net_v1)),
+    tar_target(mainstems, make_mainstems(mainstems_v2, 
+      mainstems_v3,
+      enhd_v3,
+      ref_rivers_v21,
+      ref_net_v1,
+      reconciled_mainstems,
+      "out/mainstems.gpkg")),
+  tar_target(lookup, write_lookups(mainstems, enhd_v3), format = "file"),
+  tar_target(validate, validate_mainstems(mainstems)),
+  tar_target(non_ref_mainstems, make_nonref(
+    mainstems = mainstems, 
+    new_net = ref_net_v1, 
+    lookup = lookup, 
+    out_f = "out/extra_mainstems.gpkg")),
+  tar_target(registry, build_registry(mainstems, 
+                                      registry = registry_file,
+                                      providers = provider_file)),
+  tar_target(write_reg, write_registry(registry, registry_file))
 )

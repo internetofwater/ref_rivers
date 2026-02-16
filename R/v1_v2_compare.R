@@ -9,7 +9,7 @@
 # If headwater and outlet catchments match, it's consired a match. 
 # If outlet catchments go to the same downstream path and are near eachother, 
 # it's considered a match.
-reconcile_mainstems <- function(old_ms, new_ms, old_net, new_net) {
+reconcile_mainstems_old <- function(old_ms, new_ms, old_net, new_net) {
   old_ms <- sf::read_sf(old_ms)
   new_ms <- sf::read_sf(new_ms)
   old_net <- arrow::read_parquet(old_net)
