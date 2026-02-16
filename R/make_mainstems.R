@@ -550,18 +550,20 @@ validate_mainstems <- function(ms_out) {
   }
   
   # URI checks
-  check_uri(ms_out$uri, "https://geoconnex\\.us/ref/mainstems/\\d+$", FALSE)
-  check_uri(ms_out$name_at_outlet_gnis_id, "https://geoconnex\\.us/usgs/gnis/\\d+$", "")
-  check_uri(ms_out$primary_name_gnis_id, "https://geoconnex\\.us/usgs/gnis/\\d+$", "")
-  check_uri(ms_out$head_nhdpv2_COMID, "https://geoconnex\\.us/nhdplusv2/comid/\\d+$", "")
-  check_uri(ms_out$outlet_nhdpv2_COMID, "https://geoconnex\\.us/nhdplusv2/comid/\\d+$", "") 
-  check_uri(ms_out$head_nhdpv2HUC12, "https://geoconnex\\.us/nhdplusv2/huc12/\\d+$", "")
-  check_uri(ms_out$outlet_nhdpv2HUC12, "https://geoconnex\\.us/nhdplusv2/huc12/\\d+$", "")
+  check_uri(ms_out$uri, "^https://geoconnex\\.us/ref/mainstems/\\d+$", FALSE)
+  check_uri(ms_out$name_at_outlet_gnis_id, "^https://geoconnex\\.us/usgs/gnis/\\d+$", "")
+  check_uri(ms_out$primary_name_gnis_id, "^https://geoconnex\\.us/usgs/gnis/\\d+$", "")
+  check_uri(ms_out$head_nhdpv2_COMID, "^https://geoconnex\\.us/nhdplusv2/comid/\\d+$", "")
+  check_uri(ms_out$outlet_nhdpv2_COMID, "^https://geoconnex\\.us/nhdplusv2/comid/\\d+$", "") 
+  check_uri(ms_out$head_nhdpv2HUC12, "^https://geoconnex\\.us/nhdplusv2/huc12/\\d+$", "")
+  check_uri(ms_out$outlet_nhdpv2HUC12, "^https://geoconnex\\.us/nhdplusv2/huc12/\\d+$", "")
 
   # all new mainstemid must be not superseded
+  # checks that none of the new_mainsteid entries are superseded 
   stopifnot(!all(unlist(ms_out$new_mainstemid) %in% ms_out$uri[!ms_out$superseded]))
 
   # all mainstem topology goes to stuff that exists
+  # checks that none of the active topology goes to superseded mainstems
   stopifnot(!all(unlist(ms_out$downstream_mainstem_id) %in% ms_out$uri[!ms_out$superseded]))
   stopifnot(!all(unlist(ms_out$encompassing_mainstem_basins) %in% ms_out$uri[!ms_out$superseded]))
 

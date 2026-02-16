@@ -1,3 +1,6 @@
+# Used to add new_mainstemid attributes to mainstems after workflow
+# has completed.
+
 mainstems <- sf::read_sf("out/mainstems.gpkg", "mainstems")
 
 deprecated <- sf::read_sf("data/review/deprecated_v3.geojson")
