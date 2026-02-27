@@ -1,3 +1,8 @@
+reference mainstems v3.0.1
+========================
+
+v3.0.1 introduces a lookup table from mainstem uri to nhdplushr id
+
 reference mainstems v3
 ========================
 
