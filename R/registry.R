@@ -1,6 +1,6 @@
-ms <- tar_read("mainstems")
-registry <- tar_read("registry_file")
-providers <- tar_read("provider_file")
+# ms <- tar_read("mainstems")
+# registry <- tar_read("registry_file")
+# providers <- tar_read("provider_file")
 build_registry <- function(ms, registry, providers) {
   
   reg <- readr::read_csv(registry)
