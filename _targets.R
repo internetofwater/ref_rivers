@@ -23,6 +23,10 @@ list(
   tar_target(ref_rivers_v21, get_ref_rivers(
     version = "v2.1", 
     sha256sum = "a9161151f3513206b6d5348c827dca6cbc4df147f8de98847ad1fa1e58a6a099")),
+  tar_target(ref_rivers_v30, get_ref_rivers(
+    version = "V3",
+    sha256sum = "a686d1ee51d29a40f947e89a28ce231e694178291155fe97d5c5bdd57ed23ac9"
+  )),
   tar_target(ref_net_v1, get_ref_network_1()),
   tar_target(hr_net, get_hr_lookup()),
   tar_target(nhdp_gdb, nhdplusTools::download_nhdplusv2("data/nhdp")),
@@ -32,13 +36,13 @@ list(
     enhd_v2,
     enhd_v3, 
     ref_net_v1)),
-    tar_target(mainstems, make_mainstems(mainstems_v2, 
-      mainstems_v3,
-      enhd_v3,
-      ref_rivers_v21,
-      ref_net_v1,
-      reconciled_mainstems,
-      "out/mainstems.gpkg")),
+  tar_target(mainstems, make_mainstems(
+     enhd_v3,
+     ref_rivers_v30,
+     ref_net_v1,
+     hr_net,
+     reconciled_mainstems,
+     "out/mainstems.gpkg")),
   tar_target(lookup, write_lookups(mainstems, enhd_v3, ref_net_v1, hr_net), format = "file"),
   tar_target(validate, validate_mainstems(mainstems)),
   tar_target(non_ref_mainstems, make_nonref(

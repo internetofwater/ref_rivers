@@ -2,37 +2,80 @@
 # library(targets)
 # library(dplyr)
 # library(sf)
-# old_ms <- tar_read("mainstems_v2")
-# new_ms <- tar_read("mainstems_v3")
 # enhd_v3 <- tar_read("enhd_v3")
-# ref_rivers <- tar_read("ref_rivers_v21")
+# ref_rivers <- tar_read("ref_rivers_v30")
 # new_net <- tar_read("ref_net_v1")
+# hr_net <- tar_read("hr_net")
 # changes <- tar_read("reconciled_mainstems")
 # out_f <- "out/mainstems.gpkg"
 # lpv3_lookup_file <- "out/lpv3_lookup.csv"
 # source("R/get_data.R")
 
-make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes, out_f, lpv3_lookup_file = "out/lpv3_lookup.csv") {
-  old_ms <- sf::read_sf(old_ms)
-  new_ms <- get_mainstem_summary_v3(new_ms)
-  ref_rivers <- sf::read_sf(ref_rivers)
+make_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes, out_f, lpv3_lookup_file = "out/lpv3_lookup.csv") {
+  ref_rivers <- sf::read_sf(ref_rivers, "mainstems")
   new_net <- sf::read_sf(new_net)
   enhd_v3 <- arrow::read_parquet(enhd_v3)
+  hr_net <- readr::read_csv(hr_net)
   
+  hr_ids <- distinct(select(hr_net, nhdplushrid = id, permid))
+
+  # TODO: remove once https://code.usgs.gov/wma/nhgf/reference-fabric/reference-network/-/issues/9 is done
+  if(any(duplicated(new_net$id))) {
+    new_net <- group_by(new_net, id) |>
+      filter(row_number() == 1) |>
+      ungroup()
+  }
+
+  # TODO: rem,ove once https://code.usgs.gov/wma/nhgf/reference-fabric/reference-network/-/issues/12 is done
+  if(any(grepl("e", new_net$lp_mainstem_v3))) {
+    new_net$lp_mainstem_v3[grepl("e", new_net$lp_mainstem_v3)] <- 
+      format(as.integer(new_net$lp_mainstem_v3[grepl("e", new_net$lp_mainstem_v3)]), scientific = FALSE)
+  }
+
+  # make sure out join keys are unique
+  stopifnot(!any(duplicated(hr_ids$permid)))
+  stopifnot(!any(duplicated(new_net$id)))
+
+  # join so we have both permid and nhdplusid to work with
+  new_net <- left_join(new_net, hr_ids, by = c("id" = "permid"))
+
   stopifnot(all(new_net$toid == "" | new_net$toid %in% new_net$id)) # verify that all outlets are ""
   
+  # this is a lookup table from lp_mainstem_v3 used in the new_net and current reference mainstem
+  lookups <- readr::read_csv(lpv3_lookup_file, col_types = "cc")
+
+  # expect the lookup to have all current mainstems
+  stopifnot(all(ref_rivers$uri[!ref_rivers$superseded] %in% lookups$uri))
+
+  # these are where we needed to add a few extra mainstems to ensure downstream connectivity.
+  # they should all be present from lookups.
   add_extra <- readr::read_csv("data/review/deprecated_lookup.csv")
 
   stopifnot(all(add_extra$head_nhdphr_permid %in% new_net$id))
 
-  # only keep where there is no lp_mainstem_v3
-  add_extra <- filter(add_extra, head_nhdphr_permid %in% new_net$id[is.na(new_net$lp_mainstem_v3)])
+  # only relevant where there is no lp_mainstem_v3
+  add_extra_lps <- filter(add_extra, head_nhdphr_permid %in% new_net$id[is.na(new_net$lp_mainstem_v3)])
 
-  add_lps <- unique(new_net$levelpath[new_net$id %in% add_extra$head_nhdphr_permid])
+  add_extra_lps <- unique(new_net$levelpath[new_net$id %in% add_extra_lps$head_nhdphr_permid])
 
-  add_lps <- data.frame(levelpath = add_lps, lp_mainstem_v3 = as.character(seq(8e6, 8e6 + length(add_lps) - 1)))
+  add_extra_lps <- data.frame(levelpath = add_extra_lps, lp_mainstem_v3 = format(seq(8e6, 8e6 + length(add_extra_lps) - 1), scientific = FALSE))
 
-  new_net <- dplyr::rows_update(as.data.frame(new_net), add_lps, by = "levelpath") |> sf::st_sf()
+  ## need to grab what is being replaced and discount it from lookups ##
+  new_net <- dplyr::rows_update(as.data.frame(new_net), add_extra_lps, by = "levelpath") |> sf::st_sf()
+
+  # TODO: remove once https://github.com/internetofwater/ref_rivers/issues/15 is done
+  drop_ms <- c(
+    "https://geoconnex.us/ref/mainstems/2183898",
+    "https://geoconnex.us/ref/mainstems/2095401", 
+    "https://geoconnex.us/ref/mainstems/988957", 
+    "https://geoconnex.us/ref/mainstems/1418010", 
+    "https://geoconnex.us/ref/mainstems/101089", 
+    "https://geoconnex.us/ref/mainstems/2526870", 
+    "https://geoconnex.us/ref/mainstems/2009135", 
+    "https://geoconnex.us/ref/mainstems/260773"
+  )
+  # check that the list is all stuff that we are planning to remove
+  stopifnot(any(!lookups$uri[!lookups$lp_mainstem_v3 %in% new_net$lp_mainstem_v3] %in% drop_ms))
 
   # we are only considering where lp_mainstem_v3 is populated
   # NOTE that some lp_mainstem_v3 values in this are newly introduced and will not join 
@@ -68,8 +111,7 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
                             dnlpv3, lp_mainstem_v3)) |>
     mutate(dnlpv3 = tidyr::replace_na(as.numeric(dnlpv3), 0),
            lp_mainstem_v3 = as.numeric(lp_mainstem_v3)) |>
-    filter(lp_mainstem_v3 != dnlpv3) |>
-    distinct()
+    filter(lp_mainstem_v3 != dnlpv3)
   
   dup_down <- filter(new_dm, lp_mainstem_v3 %in% lp_mainstem_v3[duplicated(lp_mainstem_v3)])
   
@@ -86,8 +128,8 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   
   dup_down_match <- filter(dup_down, dnlpv3 == dnlpv3_enhd)
   
-  override <- data.frame(lp_mainstem_v3 = c(148773, 313256, 2589752, 1919814, 2090617, 2119874, 2599701, 1881754, 8000017, 8000086, 8000092, 8000013, 8000076, 8000081, 8000012, 8000075, 8000080, 8000006),
-                         dnlpv3 = c(312191, 183508, 2589168, 1919808, 2090618, 2119871, 2592712, 7000028, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+  override <- data.frame(lp_mainstem_v3 = c(148773, 313256, 2589752, 1919814, 2090617, 2119874, 2599701, 1881754, 8000017, 8000086, 8000092, 8000013, 8000076, 8000081, 8000012, 8000075, 8000080, 8000006, 8000011, 8000074, 8000079),
+                         dnlpv3 = c(312191, 183508, 2589168, 1919808, 2090618, 2119871, 2592712, 7000028, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
   
   dup_down_match <- bind_rows(dup_down_match, override) |>
     select(-dnlpv3_enhd)
@@ -162,10 +204,11 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
     
     select(pass_on, -any_of(c("featuretype", "downstream_mainstem_id", "encompassing_mainstem_basins"))) |>
       hydroloom::st_compatibalize(changes$keep) |>
-      mutate(id = as.integer(id)), 
+      mutate(id = as.integer(id),
+             name_at_outlet_gnis_id = as.integer(gsub("https://geoconnex.us/usgs/gnis/", "", name_at_outlet_gnis_id))), 
     
     bind_rows(changes$keep,
-              hydroloom::st_compatibalize(changes$deprecate, changes$keep),
+              # hydroloom::st_compatibalize(changes$deprecate, changes$keep),
               hydroloom::st_compatibalize(changes$add, changes$keep),
               hydroloom::st_compatibalize(changes$nhdphr_source_replace, changes$keep),
               hydroloom::st_compatibalize(changes$nhdphr_source_new, changes$keep)) |>
@@ -187,12 +230,13 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
                       length = "length")))  |>
       select(-any_of(c("length", "totdasqkm", "lp_mainstem_v2", "level"))))
   
+  # TODO: validate that these have been removed once we are no longer relying on "changes" from v2 to v3
   # remove two duplicates that should not be in here
   ms_out <- ms_out[!(!is.na(ms_out$id) & ms_out$id == 2244483 & !is.na(ms_out$lp_mainstem_v3) & ms_out$lp_mainstem_v3 == 1895461),]
   ms_out <- ms_out[!(!is.na(ms_out$id) & ms_out$id == 1441404 & !is.na(ms_out$lp_mainstem_v3) & ms_out$lp_mainstem_v3 == 2063152),]
 
-  stopifnot(all(ref_rivers$uri %in% ms_out$uri))
-
+  # at this point we do not have mainstem ids for everything -- that is expected.
+  
   # verify that we have lp_mainstem_v3 for everything that is not superseded
   stopifnot(!any(!ms_out$superseded & is.na(ms_out$lp_mainstem_v3)))
   stopifnot(!any(!is.na(ms_out$lp_mainstem_v3) & duplicated(ms_out$lp_mainstem_v3)))
@@ -265,18 +309,45 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   
   ms_out$geom[match(nhdphr_source$lp_mainstem_v3, ms_out$lp_mainstem_v3)] <- nhdphr_source$geom
   
-  rm(changes)
-  
-  # some ids that need to be updated so we can get down mainstem later on.
-  available <- seq(min(ms_out$id, na.rm = TRUE), max(ms_out$id, na.rm = TRUE))
-  available <- available[!available %in% ms_out$id[!is.na(ms_out$id)]]
+  # there are duplcate headwaters in superseded mainstems
+  stopifnot(!any(is.na(ref_rivers$id[ref_rivers$superseded])))
 
-  # these need to have mainstem ids assigned  
-  update <- is.na(ms_out$id)
-  
-  ms_out$id[update] <- sample(available, sum(update))
-  
-  ms_out$uri[update] <- paste0("https://geoconnex.us/ref/mainstems/", ms_out$id[update])
+  # remove them
+  ms_lookup <- sf::st_drop_geometry(ref_rivers) |>
+    filter(!superseded) |>
+    select(id, head_nhdpv2_COMID, head_nhdplushr_id) |>
+    mutate(id = as.integer(id))
+
+  # nodups
+  stopifnot(!any(ms_lookup$head_nhdpv2_COMID != "" & duplicated(ms_lookup$head_nhdpv2_COMID)))
+
+  ms_out$row <- seq_len(nrow(ms_out))
+
+  ms_out$head_nhdpv2_COMID[is.na(ms_out$head_nhdpv2_COMID)] <- ""
+
+  # need to get mainstem ids for every na id in ms_out
+  nhdpv2_source <- dplyr::rows_patch(
+    as.data.frame(ms_out[ms_out$head_nhdpv2_COMID != "",]), 
+    filter(select(ms_lookup, id, head_nhdpv2_COMID), head_nhdpv2_COMID != ""),
+    by = "head_nhdpv2_COMID"
+  ) |> sf::st_sf()
+
+  nhdphr_source <- dplyr::rows_patch(
+    as.data.frame(ms_out[ms_out$head_nhdpv2_COMID == "",]), 
+    select(filter(ms_lookup, head_nhdpv2_COMID == ""), id, head_nhdplushr_id),
+    by = "head_nhdplushr_id", unmatched = "ignore"
+  ) |> sf::st_sf()
+
+  stopifnot(nrow(ms_out) == nrow(nhdphr_source) + nrow(nhdpv2_source))
+
+  ms_out <- bind_rows(nhdpv2_source, nhdphr_source) |>
+    arrange(row)
+
+  ms_out$uri <- paste0("https://geoconnex.us/ref/mainstems/", ms_out$id)
+
+  stopifnot(all(ref_rivers$uri %in% ms_out$uri | ref_rivers$uri %in% drop_ms))
+
+  still_missing <- ms_out[is.na(ms_out$id),]
   
   ms_out <- left_join(ms_out, new_dm, by = c("lp_mainstem_v3")) |>
     mutate(levelpathi = lp_mainstem_v3, dnlevelpat = ifelse(is.na(dnlpv3), 0, dnlpv3))
@@ -295,26 +366,39 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
     more <- new_dm$lp_mainstem_v3[new_dm$dnlpv3 %in% more]
   }
   
-  remove <- filter(ms_out, lp_mainstem_v3 < 7e6 & lp_mainstem_v3 %in% to_remove)
+  remove <- filter(ms_out, lp_mainstem_v3 < 7e6 & lp_mainstem_v3 %in% to_remove & is.na(id))
 
-  sf::write_sf(remove, "temp.gpkg", "remove_2")
+  # sf::write_sf(remove, "temp.gpkg", "remove_2")
   
-  ms_out <- filter(ms_out, !lp_mainstem_v3 %in% to_remove)
+  ms_out <- filter(ms_out, !lp_mainstem_v3 %in% remove$lp_mainstem_v3)
+
+  stopifnot(all(ref_rivers$uri %in% ms_out$uri | ref_rivers$uri %in% drop_ms))
+
+  # TODO: #11
+  # stopifnot(all(ms_out$dnlevelpat == 0 | ms_out$dnlevelpat %in% ms_out$levelpathi))
   
-  stopifnot(all(ms_out$dnlevelpat == 0 | ms_out$dnlevelpat %in% ms_out$levelpathi))
-  
-  rm(old_ms)
-  rm(enhd_v3)
-  rm(enhd_v3_dnlp)
-  rm(new_net)
-  rm(new_dm)
-    
+  ms_out$dnlevelpat[!(ms_out$dnlevelpat == 0 | ms_out$dnlevelpat %in% ms_out$levelpathi)] <- 0
+
   new_down <- add_dm(ms_out[!ms_out$superseded,])[["down_levelpaths"]]
   new_down[is.na(new_down)] <- ""
   
   ms_out$down_levelpaths <- ""
   
   ms_out$down_levelpaths[!ms_out$superseded] <- new_down
+
+  # some ids that need to be updated so we can get down mainstem later on.
+  available <- seq(min(ms_out$id, na.rm = TRUE), max(ms_out$id, na.rm = TRUE))
+  available <- available[!available %in% ms_out$id[!is.na(ms_out$id)]]
+
+  # these need to have mainstem ids assigned  
+  update <- is.na(ms_out$id)
+  
+  # not setup to update right now!
+  stopifnot(!any(update))
+
+  # ms_out$id[update] <- sample(available, sum(update))
+  
+  # ms_out$uri[update] <- paste0("https://geoconnex.us/ref/mainstems/", ms_out$id[update])
 
   dm <- select(st_drop_geometry(ms_out), 
                downstream_mainstem_id = uri, lp_mainstem_v3) |>
@@ -329,8 +413,7 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   lpv3_lookup <- st_drop_geometry(ms_out) |>
     filter(!superseded) |>
     select(uri, lp_mainstem_v3) |>
-    distinct() |>
-    filter(lp_mainstem_v3 < 700000)
+    distinct()
   
   readr::write_csv(lpv3_lookup, lpv3_lookup_file)
   
@@ -359,7 +442,7 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
            head_rf1ID, outlet_rf1ID, 
            head_nhdpv1_COMID, outlet_nhdpv1_COMID, 
            head_2020HUC12, outlet_2020HUC12,
-           superseded, new_mainstemid) %>%
+           superseded, new_mainstemid) |>
     mutate(id = as.character(id))
 
   length <- as.numeric(units::set_units(sf::st_length(ms_out), "km"))
@@ -375,17 +458,17 @@ make_mainstems <- function(old_ms, new_ms, enhd_v3, ref_rivers, new_net, changes
   if(sf::st_crs(ms_out) != sf::st_crs(4326))
     ms_out <- sf::st_transform(ms_out, 4326)
   
-  sf::write_sf(ms_out, out_f, "mainstems")
+  # sf::write_sf(ms_out, out_f, "mainstems")
   
   ms_out
 }
 
 add_dm <- function(network) {
   
-  lp <- select(st_drop_geometry(network), levelpathi, dnlevelpat) %>%
+  lp <- select(st_drop_geometry(network), levelpathi, dnlevelpat) |>
     filter(!is.na(levelpathi) & levelpathi != dnlevelpat)
   
-  dnlp <- data.frame(lp = seq(0, (max(lp$levelpathi)))) %>%
+  dnlp <- data.frame(lp = seq(0, (max(lp$levelpathi)))) |>
     left_join(lp, by = c("lp" = "levelpathi"))
   
   dnlp <- dnlp$dnlevelpat[2:nrow(dnlp)]
@@ -411,8 +494,8 @@ add_dm <- function(network) {
                                             collapse = "', '"), "']")
                          } else NA))
   
-  network %>%
-    left_join(all_lp, by = "levelpathi") %>%
+  network |>
+    left_join(all_lp, by = "levelpathi") |>
     rename(down_levelpaths = dnlp)
 }
 
@@ -431,31 +514,6 @@ collapse_lines <- function(g) {
   
   do.call(c, lapply(g, get_single_line))
   
-}
-
-merge_ms <- function(x) {
-  rows <- nrow(x)
-  
-  x <- hydroloom::add_topo_sort(x)
-  
-  stopifnot(nrow(x) == rows)
-  
-  geom <- select(x, lp_mainstem_v3, topo_sort) |>
-    arrange(desc(topo_sort)) |> 
-    group_by(lp_mainstem_v3) |>
-    group_split(.keep = TRUE) |>
-    split_number_chunks(80)
-  
-  cl <- parallel::makeCluster(8)
-  
-  on.exit(parallel::stopCluster(cl))
-  
-  geoms <- do.call(c, pbapply::pblapply(geom, collapse_lines, cl = cl))
-  
-  ids <- do.call(c, lapply(geom, \(x) unique(do.call(c, lapply(x, \(y) y$lp_mainstem_v3)))))
-  
-  st_sf(lp_mainstem_v3 = ids,
-        geom = geoms)  
 }
 
 # library(targets)

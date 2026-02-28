@@ -1,3 +1,9 @@
+# tar_load(mainstems)
+# tar_load(enhd_v3)
+# tar_load(ref_net_v1)
+# tar_load(hr_net)
+
+#' writes lookups between mainstem id and various identifier systems
 write_lookups <- function(mainstems, enhd_v3, ref_net_v1, hr_net) {
   enhd <- arrow::read_parquet(enhd_v3)
   ref_net <- sf::read_sf(ref_net_v1)
