@@ -36,13 +36,19 @@ list(
     enhd_v2,
     enhd_v3, 
     ref_net_v1)),
-  tar_target(mainstems, make_mainstems(
+  tar_target("raw_mainstems", initialize_mainstems(
      enhd_v3,
      ref_rivers_v30,
      ref_net_v1,
      hr_net,
-     reconciled_mainstems,
-     "out/mainstems.gpkg")),
+     reconciled_mainstems
+  )),
+  tar_target(lp_v3_lookup, write_lp_v3_lookup(raw_mainstems, "out/lpv3_lookup.csv"), format = "file"),
+  tar_target(mainstems, make_mainstems(raw_mainstems)),
+  # tar_target(mainstem_gpkg, {
+  #   sf::write_sf(mainstems, "out/mainstems.gpkg", "mainstems")
+  #   "out/mainstems.gpkg"
+  # }, format = "file"),
   tar_target(lookup, write_lookups(mainstems, enhd_v3, ref_net_v1, hr_net), format = "file"),
   tar_target(validate, validate_mainstems(mainstems)),
   tar_target(non_ref_mainstems, make_nonref(
