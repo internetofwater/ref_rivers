@@ -32,6 +32,18 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
     "https://geoconnex.us/ref/mainstems/260773"
   )
 
+  # TODO: remove this once reference network is rebuilt
+  new_net$id <- trimws(new_net$id)
+  new_net$toid <- trimws(new_net$toid)
+
+  # TODO: remove this once reference mainstems is refreshed
+  if(any(ref_rivers$head_nhdplushr_id %in% hr_net$permid)) {
+    hr_ids <- distinct(select(hr_net, nhdplushrid = id, permid))
+
+    ref_rivers$head_nhdplushr_id[ref_rivers$head_nhdplushr_id %in% hr_ids$permid] <- 
+      hr_ids$nhdplushrid[match(ref_rivers$head_nhdplushr_id[ref_rivers$head_nhdplushr_id %in% hr_ids$permid], hr_ids$permid)]
+  }
+
   # check that the list is all stuff that we are planning to remove
   stopifnot(any(!lookups$uri[!lookups$lp_mainstem_v3 %in% new_net$lp_mainstem_v3] %in% drop_ms))
 
@@ -247,28 +259,23 @@ validate_mainstems <- function(ms_out) {
   TRUE
 }
 
+# Also defined in https://code.usgs.gov/wma/nhgf/reference-fabric/reference-network
+  idf <- function(ids, prefix = "") {
+    if(is.numeric(ids)) ids <- floor(ids)
+    ifelse(is.na(ids), NA_character_, 
+      trimws(paste0(prefix, format(ids, trim = TRUE, scientific = FALSE))))
+  }
+
 validate_ms_inputs <- function(ref_rivers, new_net, hr_net, lookups, drop_ms, add_extra_lookup = "data/review/deprecated_lookup.csv") {
+
   hr_ids <- distinct(select(hr_net, nhdplushrid = id, permid))
-  
-  # TODO: remove once https://code.usgs.gov/wma/nhgf/reference-fabric/reference-network/-/issues/9 is done
-  if(any(duplicated(new_net$id))) {
-    new_net <- group_by(new_net, id) |>
-    filter(row_number() == 1) |>
-    ungroup()
-  }
-  
-  # TODO: rem,ove once https://code.usgs.gov/wma/nhgf/reference-fabric/reference-network/-/issues/12 is done
-  if(any(grepl("e", new_net$lp_mainstem_v3))) {
-    new_net$lp_mainstem_v3[grepl("e", new_net$lp_mainstem_v3)] <- 
-    format(as.integer(new_net$lp_mainstem_v3[grepl("e", new_net$lp_mainstem_v3)]), scientific = FALSE)
-  }
   
   # make sure out join keys are unique
   stopifnot(!any(duplicated(hr_ids$permid)))
   stopifnot(!any(duplicated(new_net$id)))
-  
-  # join so we have both permid and nhdplusid to work with
-  new_net <- left_join(new_net, hr_ids, by = c("id" = "permid"))
+
+  # must not have scientific notation in ids
+  stopifnot(!any(grepl("e", new_net$lp_mainstem_v3)))
   
   stopifnot(all(new_net$toid == "" | new_net$toid %in% new_net$id)) # verify that all outlets are ""
   
@@ -279,12 +286,14 @@ validate_ms_inputs <- function(ref_rivers, new_net, hr_net, lookups, drop_ms, ad
   # they should all be present from lookups.
   add_extra <- readr::read_csv(add_extra_lookup)
 
-  stopifnot(all(add_extra$head_nhdphr_permid %in% new_net$id))
+  add_extra$id <- idf(add_extra$head_nhdplushr_id, "nhdphr-")
+
+  stopifnot(all(add_extra$id %in% new_net$id))
 
   # only relevant where there is no lp_mainstem_v3
-  add_extra_lps <- filter(add_extra, head_nhdphr_permid %in% new_net$id[is.na(new_net$lp_mainstem_v3)])
+  add_extra_lps <- filter(add_extra, id %in% new_net$id[is.na(new_net$lp_mainstem_v3)])
 
-  add_extra_lps <- unique(new_net$levelpath[new_net$id %in% add_extra_lps$head_nhdphr_permid])
+  add_extra_lps <- unique(new_net$levelpath[new_net$id %in% add_extra_lps$id])
 
   add_extra_lps <- data.frame(levelpath = add_extra_lps, lp_mainstem_v3 = format(seq(8e6, 8e6 + length(add_extra_lps) - 1), scientific = FALSE))
 
@@ -488,8 +497,8 @@ get_nhdphr_source_extra <- function(new_net_nolp) {
     summarize(lp_mainstem_v3 = lp_mainstem_v3[1],
               name_at_outlet = gnis_name[n()],
               common_GNIS_NAME = common_name[1],
-              head_nhdplushr_id = id[1],
-              outlet_nhdplushr_id = id[n()],
+              head_nhdplushr_id = gsub("nhdphr-", "", id[1]), 
+              outlet_nhdplushr_id = gsub("nhdphr-", "", id[n()]),
               lengthkm = sum(length_km),
               outlet_drainagearea_sqkm = total_da_sqkm[1],
               superseded = FALSE)
