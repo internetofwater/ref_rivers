@@ -18,9 +18,10 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
   hr_net <- readr::read_csv(hr_net)
   
   # this is a lookup table from lp_mainstem_v3 used in the new_net and current reference mainstem
+  # It's not used here and is only for validation. lp_v3 is on the way out
   lookups <- readr::read_csv("out/lpv3_lookup.csv", col_types = "cc")
 
-  # TODO: remove once https://github.com/internetofwater/ref_rivers/issues/15 is done
+  # https://github.com/internetofwater/ref_rivers/issues/15
   drop_ms <- c(
     "https://geoconnex.us/ref/mainstems/2183898",
     "https://geoconnex.us/ref/mainstems/2095401", 
@@ -67,6 +68,9 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
   ms_out <- assign_new_ms_ids(ms_out)
 
   ms_out <- add_dm_ms_id(ms_out)
+
+  # https://github.com/internetofwater/ref_rivers/issues/15
+  ms_out$superseded[ms_out$uri %in% drop_ms] <- FALSE
 
   ms_out
 }
