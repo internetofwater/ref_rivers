@@ -612,7 +612,8 @@ add_dn_ms <- function(ms_out, new_dm, ref_rivers, drop_ms) {
     more <- new_dm$lp_mainstem_v3[new_dm$dnlpv3 %in% more]
   }
   
-  remove <- filter(ms_out, lp_mainstem_v3 < 7e6 & lp_mainstem_v3 %in% to_remove & is.na(id))
+  remove <- filter(ms_out, lp_mainstem_v3 < 7e6 & lp_mainstem_v3 %in% to_remove & 
+    is.na(id)) # Don't remove where a mainstem id has already been set!
   
   # sf::write_sf(remove, "temp.gpkg", "remove_2")
   
@@ -620,14 +621,14 @@ add_dn_ms <- function(ms_out, new_dm, ref_rivers, drop_ms) {
   
   stopifnot(all(ref_rivers$uri %in% ms_out$uri | ref_rivers$uri %in% drop_ms))
   
-  # TODO: #11
-  # stopifnot(all(ms_out$dnlevelpat == 0 | ms_out$dnlevelpat %in% ms_out$levelpathi))
+  # See #11
+  stopifnot(sum(!(ms_out$dnlevelpat == 0 | ms_out$dnlevelpat %in% ms_out$levelpathi)) == 80)
   
   ms_out$dnlevelpat[!(ms_out$dnlevelpat == 0 | ms_out$dnlevelpat %in% ms_out$levelpathi)] <- 0
   
   new_down <- add_dm(ms_out[!ms_out$superseded,])[["down_levelpaths"]]
   new_down[is.na(new_down)] <- ""
-  
+
   ms_out$down_levelpaths <- ""
   
   ms_out$down_levelpaths[!ms_out$superseded] <- new_down
