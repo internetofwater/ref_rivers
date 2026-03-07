@@ -33,6 +33,14 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
     "https://geoconnex.us/ref/mainstems/260773"
   )
 
+  # TODO: after reference network is rebuilt
+  # validate ref_rivers #11
+  new_net$lp_mainstem_v3[
+    new_net$lp_mainstem_v3 == 2492265 & 
+    !is.na(new_net$lp_mainstem_v3) & 
+    new_net$vector_proc_unit == "1807"
+  ] <- 111367
+
   # TODO: remove this once reference network is rebuilt
   new_net$id <- trimws(new_net$id)
   new_net$toid <- trimws(new_net$toid)
@@ -621,7 +629,7 @@ add_dn_ms <- function(ms_out, new_dm, ref_rivers, drop_ms) {
   
   stopifnot(all(ref_rivers$uri %in% ms_out$uri | ref_rivers$uri %in% drop_ms))
   
-  # See #11
+  # See #13
   stopifnot(sum(!(ms_out$dnlevelpat == 0 | ms_out$dnlevelpat %in% ms_out$levelpathi)) == 80)
   
   ms_out$dnlevelpat[!(ms_out$dnlevelpat == 0 | ms_out$dnlevelpat %in% ms_out$levelpathi)] <- 0
