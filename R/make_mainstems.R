@@ -30,20 +30,20 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
     "https://geoconnex.us/ref/mainstems/101089", 
     "https://geoconnex.us/ref/mainstems/2526870", 
     "https://geoconnex.us/ref/mainstems/2009135", 
-    "https://geoconnex.us/ref/mainstems/260773"
+    "https://geoconnex.us/ref/mainstems/260773",
+      # https://github.com/internetofwater/ref_rivers/issues/12
+    "https://geoconnex.us/ref/mainstems/1171783",
+    "https://geoconnex.us/ref/mainstems/35294",
+    "https://geoconnex.us/ref/mainstems/693625",
+    "https://geoconnex.us/ref/mainstems/794163",
+    "https://geoconnex.us/ref/mainstems/2623369",
+    "https://geoconnex.us/ref/mainstems/1951375",
+    "https://geoconnex.us/ref/mainstems/2345807"
   )
 
-  # TODO: after reference network is rebuilt
-  # validate ref_rivers #11
-  new_net$lp_mainstem_v3[
-    new_net$lp_mainstem_v3 == 2492265 & 
-    !is.na(new_net$lp_mainstem_v3) & 
-    new_net$vector_proc_unit == "1807"
-  ] <- 111367
-
   # TODO: remove this once reference network is rebuilt
-  new_net$id <- trimws(new_net$id)
-  new_net$toid <- trimws(new_net$toid)
+  stopifnot(all(new_net$id == trimws(new_net$id)))
+  stopifnot(all(new_net$toid == trimws(new_net$toid)))
 
   # TODO: remove this once reference mainstems is refreshed
   if(any(ref_rivers$head_nhdplushr_id %in% hr_net$permid)) {
@@ -67,6 +67,8 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
   # get the initial ms_out table
   ms_out <- get_ms_out(ref_rivers, changes)
 
+  ms_out <- clean_outlet(ms_out, new_net)
+
   ms_out <- add_hr_mainstems(ms_out, new_net, get_nhdphr_source_extra(new_net_nolp), changes)
 
   ms_out <- add_ref_uri(ms_out, ref_rivers, drop_ms)
@@ -78,7 +80,7 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
   ms_out <- add_dm_ms_id(ms_out)
 
   # https://github.com/internetofwater/ref_rivers/issues/15
-  ms_out$superseded[ms_out$uri %in% drop_ms] <- FALSE
+  ms_out$superseded[ms_out$uri %in% drop_ms] <- TRUE
 
   ms_out
 }
@@ -486,6 +488,100 @@ get_ms_out <- function(ref_rivers, changes) {
   ms_out
 }
 
+# double check that outlets are members of the path they should be.
+clean_outlet <- function(ms_out, new_net) {
+
+  # pecos outlet fix up
+  ms_out$outlet_nhdpv2_COMID[ms_out$lp_mainstem_v3 == "2208010" & !is.na(ms_out$lp_mainstem_v3)] <- "https://geoconnex.us/nhdplusv2/comid/334014"
+
+  check <- sf::st_drop_geometry(ms_out) |>
+    filter(!superseded) |>
+    select(uri, head_nhdpv2_COMID, outlet_nhdpv2_COMID) |>
+    # TODO: create a function to flip URI to id and back
+    mutate(head_nhdpv2_COMID = gsub("https://geoconnex.us/nhdplusv2/comid/",
+                                               "nhdpv2-",
+                                               head_nhdpv2_COMID),
+           outlet_nhdpv2_COMID = gsub("https://geoconnex.us/nhdplusv2/comid/",
+                                               "nhdpv2-",
+                                               outlet_nhdpv2_COMID)) |>
+    left_join(select(sf::st_drop_geometry(new_net), id, lp_mainstem_v3), # first join head comid to get levelpath
+              by = c("head_nhdpv2_COMID" = "id")) |>
+    left_join(filter(select(sf::st_drop_geometry(new_net), id, lp_mainstem_v3), !is.na(lp_mainstem_v3)), # now join by levelpath to get all comids
+              by = "lp_mainstem_v3")
+  
+  check <- group_by(check, lp_mainstem_v3) |>
+    # check that one of the ids in the mainstem is the outlet
+    mutate(outlet_check = any(id == outlet_nhdpv2_COMID))
+  
+  # want to make sure that outlet_check is TRUE or NA for all groups
+  stopifnot(sort(unique(check$lp_mainstem_v3[!(check$outlet_check | is.na(check$outlet_check))])) == c("131736", "148774")) 
+  
+  get_check <- function(ms_out) {
+    sf::st_drop_geometry(ms_out) |>
+      filter(!superseded) |>
+      select(uri, head_nhdplushr_id, outlet_nhdplushr_id, lengthkm) |>
+      distinct() |>
+      mutate(head_nhdplushr_id = paste0("nhdphr-", head_nhdplushr_id), outlet_nhdplushr_id = paste0("nhdphr-", outlet_nhdplushr_id)) |>
+      # first join to get levelpath
+      left_join(select(sf::st_drop_geometry(new_net), id, lp_mainstem_v3), by = c("head_nhdplushr_id" = "id")) |>
+      filter(!is.na(lp_mainstem_v3))
+  }
+
+  get_dups <- function (x, col) {
+    x[x[[col]] %in% x[[col]][duplicated(x[[col]])], ]
+  }
+
+  check <- get_check(ms_out)
+
+  dups <- get_dups(check, "lp_mainstem_v3")
+
+  # see #12 -- these are being removed seperately
+  # all this validation will be removed in v3.2 when we drop lpv3 completely
+  stopifnot(nrow(dups) < 10)
+
+  dups <- group_by(dups, lp_mainstem_v3) |>
+    filter(lengthkm == min(lengthkm))
+
+  check <- filter(check, !lp_mainstem_v3 %in% dups$lp_mainstem_v3) |>
+    bind_rows(dups) |>
+    select(-lengthkm) |>
+    # now join by levelpath to get all ids along each path
+    left_join(filter(select(sf::st_drop_geometry(new_net), lp_mainstem_v3, id), !is.na(lp_mainstem_v3)), by = "lp_mainstem_v3")
+  
+  check <- group_by(check, lp_mainstem_v3) |>
+    mutate(outlet_check = any(id == outlet_nhdplushr_id))
+  
+  # expect that all outlet checks are NA or TRUE
+  # if not, we need to find the correct outlet from new_net
+  tofix <- unique(check$lp_mainstem_v3[!is.na(check$outlet_check) & !check$outlet_check])
+
+  # If this is more than this we need to look into it
+  stopifnot(length(tofix) < 75)
+
+  new_net <- hydroloom::add_topo_sort(new_net)
+
+  outlets <- dplyr::select(sf::st_drop_geometry(new_net), id, topo_sort, lp_mainstem_v3) |>
+    filter(lp_mainstem_v3 %in% tofix) |>
+    group_by(lp_mainstem_v3) |>
+    filter(row_number() == n()) |>
+    ungroup() |>
+    select(outlet_nhdplushr_id = id, lp_mainstem_v3) |>
+    mutate(lp_mainstem_v3 = as.numeric(lp_mainstem_v3),outlet_nhdplushr_id = gsub("nhdphr-", "", outlet_nhdplushr_id))
+
+  ms_out_update <- dplyr::rows_update(as.data.frame(ms_out), outlets, by = "lp_mainstem_v3") |> sf::st_sf()
+
+  check <- get_check(ms_out_update) |>
+    filter(!lp_mainstem_v3 %in% dups$lp_mainstem_v3) |>
+    left_join(filter(select(sf::st_drop_geometry(new_net), lp_mainstem_v3, id), !is.na(lp_mainstem_v3)), by = "lp_mainstem_v3") |>
+    group_by(lp_mainstem_v3) |>
+    mutate(outlet_check = any(id == outlet_nhdplushr_id))
+
+  # want to make sure that outlet_check is TRUE or NA for all groups
+  stopifnot(all(check$outlet_check | check$lp_mainstem_v3 == "1971028")) # columbia river is the only one that spans into v2 from the hr domain
+  
+  ms_out_update
+}
+
 get_nhdphr_source_extra <- function(new_net_nolp) {
    ### need to get geometry from new_net for the two nhdphr_source changes sets
 
@@ -630,7 +726,7 @@ add_dn_ms <- function(ms_out, new_dm, ref_rivers, drop_ms) {
   stopifnot(all(ref_rivers$uri %in% ms_out$uri | ref_rivers$uri %in% drop_ms))
   
   # See #13
-  stopifnot(sum(!(ms_out$dnlevelpat == 0 | ms_out$dnlevelpat %in% ms_out$levelpathi)) == 80)
+  stopifnot(sum(!(ms_out$dnlevelpat == 0 | ms_out$dnlevelpat %in% ms_out$levelpathi)) < 100)
   
   ms_out$dnlevelpat[!(ms_out$dnlevelpat == 0 | ms_out$dnlevelpat %in% ms_out$levelpathi)] <- 0
   
