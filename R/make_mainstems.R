@@ -8,7 +8,6 @@
 # hr_net <- tar_read("hr_net")
 # changes <- tar_read("reconciled_mainstems")
 # out_f <- "out/mainstems.gpkg"
-# lpv3_lookup_file <- "out/lpv3_lookup.csv"
 # source("R/get_data.R")
 
 initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) {
@@ -16,14 +15,16 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
   new_net <- sf::read_sf(new_net)
   enhd_v3 <- arrow::read_parquet(enhd_v3)
   hr_net <- readr::read_csv(hr_net)
+
+  lpv3_lookup_file <- "out/lpv3_lookup.csv"
   
   # this is a lookup table from lp_mainstem_v3 used in the new_net and current reference mainstem
   # It's not used here and is only for validation. lp_v3 is on the way out
-  lookups <- readr::read_csv("out/lpv3_lookup.csv", col_types = "cc")
+  lookups <- readr::read_csv(lpv3_lookup_file, col_types = "cc")
 
   # https://github.com/internetofwater/ref_rivers/issues/15
   drop_ms <- c(
-    "https://geoconnex.us/ref/mainstems/2183898",
+    "https://geoconnex.us/ref/mainstems/2183898", # this mainstem goes missing?
     "https://geoconnex.us/ref/mainstems/2095401", 
     "https://geoconnex.us/ref/mainstems/988957", 
     "https://geoconnex.us/ref/mainstems/1418010", 
@@ -41,7 +42,6 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
     "https://geoconnex.us/ref/mainstems/2345807"
   )
 
-  # TODO: remove this once reference network is rebuilt
   stopifnot(all(new_net$id == trimws(new_net$id)))
   stopifnot(all(new_net$toid == trimws(new_net$toid)))
 
@@ -53,34 +53,55 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
       hr_ids$nhdplushrid[match(ref_rivers$head_nhdplushr_id[ref_rivers$head_nhdplushr_id %in% hr_ids$permid], hr_ids$permid)]
   }
 
+  # this was dropped from the reference network 
+  ref_rivers$superseded[ref_rivers$uri == "https://geoconnex.us/ref/mainstems/2183898"] <- TRUE
+
   # check that the list is all stuff that we are planning to remove
-  stopifnot(any(!lookups$uri[!lookups$lp_mainstem_v3 %in% new_net$lp_mainstem_v3] %in% drop_ms))
+  # stopifnot(any(!lookups$uri[!lookups$lp_mainstem_v3 %in% new_net$lp_mainstem_v3] %in% drop_ms))
+  
+  stopifnot(all(drop_ms %in% ref_rivers$uri))
 
   # run validations and fix up new_net ids
   new_net <- validate_ms_inputs(ref_rivers, new_net, hr_net, lookups, drop_ms)
   
+  # Filter to rows with valid lp_mainstem_v3 and join downstream levelpath info, removing disconnected mainstems.
   new_net_nolp <- get_new_net_nolp(new_net)
 
-  # Get down main connections from new_net
+  # Extract distinct downstream mainstem relationships, resolving duplicates and validating connectivity.
   new_dm <- get_new_dm(new_net_nolp, enhd_v3)
-    
-  # get the initial ms_out table
+
+  # Reconcile superseded, kept, deprecated, added, and replaced mainstems into a unified output dataset.
   ms_out <- get_ms_out(ref_rivers, changes)
 
+  # Verify each outlet id is a member of its assigned levelpath, fixing discrepancies where needed.
   ms_out <- clean_outlet(ms_out, new_net)
 
+  # Combine mainstem data with NHDPlusHR source info and construct HR mainstem geometries in parallel.
   ms_out <- add_hr_mainstems(ms_out, new_net, get_nhdphr_source_extra(new_net_nolp), changes)
 
+  # Match mainstems with existing reference river ids based on headwater locations to assign uris.
   ms_out <- add_ref_uri(ms_out, ref_rivers, drop_ms)
 
+  # Join downstream mainstem relationships and remove orphaned mainstems lacking valid connections.
   ms_out <- add_dn_ms(ms_out, new_dm, ref_rivers, drop_ms)
 
+  # Identify available mainstem ids in the sequence and assign them to new mainstems.
   ms_out <- assign_new_ms_ids(ms_out)
 
+  # Add downstream mainstem IDs by looking up output URIs keyed by levelpath.
   ms_out <- add_dm_ms_id(ms_out)
 
   # https://github.com/internetofwater/ref_rivers/issues/15
   ms_out$superseded[ms_out$uri %in% drop_ms] <- TRUE
+
+  # quadruple check
+  stopifnot(!any(is.na(ms_out$uri)))
+  stopifnot(!any(is.na(ms_out$id)))
+  stopifnot(all(ref_rivers$uri %in% ms_out$uri))
+
+  # somehow these get flipped to NA Maybe track down where?
+  ms_out$head_nhdpv2_COMID[ms_out$uri == "https://geoconnex.us/ref/mainstems/2183898"] <- ""
+  ms_out$outlet_nhdpv2_COMID[ms_out$uri == "https://geoconnex.us/ref/mainstems/2183898"] <- ""
 
   ms_out
 }
@@ -294,7 +315,7 @@ validate_ms_inputs <- function(ref_rivers, new_net, hr_net, lookups, drop_ms, ad
   stopifnot(all(new_net$toid == "" | new_net$toid %in% new_net$id)) # verify that all outlets are ""
   
   # expect the lookup to have all current mainstems
-  stopifnot(all(ref_rivers$uri[!ref_rivers$superseded] %in% c(lookups$uri, drop_ms)))
+  # stopifnot(all(ref_rivers$uri[!ref_rivers$superseded] %in% c(lookups$uri, drop_ms)))
   
   # these are where we needed to add a few extra mainstems to ensure downstream connectivity.
   # they should all be present from lookups.

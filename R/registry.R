@@ -3,7 +3,7 @@
 # providers <- tar_read("provider_file")
 build_registry <- function(ms, registry, providers) {
   
-  reg <- readr::read_csv(registry)
+  reg <- readr::read_csv(registry, col_types = "icci")
   pro <- readr::read_csv(providers)
   
   reg$head <- format(reg$head, scientific = FALSE)
