@@ -23,7 +23,12 @@ list(
   tar_target(ref_rivers_v21, get_ref_rivers(
     version = "v2.1", 
     sha256sum = "a9161151f3513206b6d5348c827dca6cbc4df147f8de98847ad1fa1e58a6a099")),
+  tar_target(ref_rivers_v30, get_ref_rivers(
+    version = "V3",
+    sha256sum = "a686d1ee51d29a40f947e89a28ce231e694178291155fe97d5c5bdd57ed23ac9"
+  )),
   tar_target(ref_net_v1, get_ref_network_1()),
+  tar_target(hr_net, get_hr_lookup()),
   tar_target(nhdp_gdb, nhdplusTools::download_nhdplusv2("data/nhdp")),
   tar_target(nhdp_geo, sf::read_sf(nhdp_gdb, "NHDFlowline_Network")),
   tar_target(reconciled_mainstems, reconcile_mainstems(mainstems_v2, 
@@ -31,14 +36,20 @@ list(
     enhd_v2,
     enhd_v3, 
     ref_net_v1)),
-    tar_target(mainstems, make_mainstems(mainstems_v2, 
-      mainstems_v3,
-      enhd_v3,
-      ref_rivers_v21,
-      ref_net_v1,
-      reconciled_mainstems,
-      "out/mainstems.gpkg")),
-  tar_target(lookup, write_lookups(mainstems, enhd_v3), format = "file"),
+  tar_target("raw_mainstems", initialize_mainstems(
+     enhd_v3,
+     ref_rivers_v30,
+     ref_net_v1,
+     hr_net,
+     reconciled_mainstems
+  )),
+  tar_target(lp_v3_lookup, write_lp_v3_lookup(raw_mainstems, "out/lpv3_lookup.csv"), format = "file"),
+  tar_target(mainstems, make_mainstems(raw_mainstems)),
+  tar_target(mainstem_gpkg, {
+    sf::write_sf(mainstems, "out/mainstems.gpkg", "mainstems")
+    "out/mainstems.gpkg"
+  }, format = "file"),
+  tar_target(lookup, write_lookups(mainstems, enhd_v3, ref_net_v1, hr_net), format = "file"),
   tar_target(validate, validate_mainstems(mainstems)),
   tar_target(non_ref_mainstems, make_nonref(
     mainstems = mainstems, 

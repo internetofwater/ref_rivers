@@ -188,3 +188,31 @@ get_ref_rivers <- function(version = "v2.1", sha256sum = "a9161151f3513206b6d534
   out_path
   
 }
+
+get_hr_lookup <- function() {
+  url <- "https://code.usgs.gov/wma/nhgf/reference-fabric/reference-network/-/package_files/18469/download"
+  sha256sum <- "b2a5bde0a80d2dc7de72b371341e07862e706b8e343cc53886b2daef591fb357"
+
+  out_path <- file.path("data/reference_network/", "hr_net.csv")
+  
+  if(!file.exists(out_path)) {
+    
+    dir.create(dirname(out_path), recursive = TRUE, showWarnings = FALSE)
+   
+    out_zip <- paste0(out_path, ".zip")
+
+    f <- httr::GET(url, httr::write_disk(out_zip))
+    
+    if(!f$status_code == 200) stop("error downloading")
+    
+    hash <- tools::sha256sum(out_zip)
+  
+    if(sha256sum != hash) stop("hash doesn't match")   
+    
+    zip::unzip(out_zip, exdir = dirname(out_path), junkpaths = TRUE)
+
+    unlink(out_zip)
+  }
+  
+  out_path
+}

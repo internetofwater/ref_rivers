@@ -1,13 +1,18 @@
-ms <- tar_read("mainstems")
-registry <- tar_read("registry_file")
-providers <- tar_read("provider_file")
+# ms <- tar_read("mainstems")
+# registry <- tar_read("registry_file")
+# providers <- tar_read("provider_file")
 build_registry <- function(ms, registry, providers) {
   
-  reg <- readr::read_csv(registry)
-  pro <- readr::read_csv(providers)
-  
-  reg$head <- format(reg$head, scientific = FALSE)
-  reg$out <- format(reg$head, scientific = FALSE)
+  reg <- read.table(
+    file = registry, header = TRUE, sep = ",", colClasses = c("integer", "character", "character", "integer")
+  ) |> dplyr::as_tibble()
+
+  reg$head <- trimws(reg$head)
+  reg$out <- trimws(reg$out)
+
+  pro <- read.table(
+    file = providers, header = TRUE, sep = ",", colClasses = c("integer", "character", "character")
+  ) |> dplyr::as_tibble()
 
   ms_id <- gsub("https://geoconnex.us/ref/mainstems/", "", ms$uri)
   
@@ -63,7 +68,8 @@ build_registry <- function(ms, registry, providers) {
 }
 
 write_registry <- function(registry, registry_file) {
-  readr::write_csv(registry, registry_file)
+
+  write.table(x = registry, file = registry_file, append = FALSE, sep = ",", quote = FALSE, row.names = FALSE)
   
   registry_file
 }

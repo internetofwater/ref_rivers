@@ -99,6 +99,16 @@ The project uses the [`{targets}` R package](https://books.ropensci.org/targets/
 - `/registry` registry of dams tracked in source control.
 - `/docs` contains artifacts to be served via github.io
 
+# Version strategy
+
+Versioning of reference rivers will take the form "major.minor.patch"
+
+Major Version: When one or more base networks are incorporated or breaking changes are made to some aspect of the project. Major versions should be released no more than once every 5 to 10 years and may not occur for a very long time.
+
+Minor Version: When additions are made to the registry, mainstems are deprecated (marked superseded = TRUE), non-breaking changes are made to the data model, or additional outputs are added to the project. Minor versions can be released at any time, prompted by an identified need or related activity.  
+
+Patch Version: Patch versions will be used for changes such as attribute value improvements, documentation improvements, bug fixes, and any other non-breaking change that doesn't require any change for projects that depend on mainstems other than updating source data files to get updated content.
+
 # Contributing
 
 First, thank you for considering a contribution! For this to work, everyone with unique dam locations need to be willing to contribute those locations here. 

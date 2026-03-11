@@ -1,3 +1,10 @@
+reference mainstems v3.1
+========================
+
+v3.1 introduces a lookup table from mainstem uri to nhdplushr id
+
+v3.1 is primarily a post-process validation release. No meaningful changes have been made to mainstems. A small number (15) of mainstems that were missed in v3 validation have been marked as superseded.
+
 reference mainstems v3
 ========================
 
@@ -118,9 +125,9 @@ The base geometry for this new reference fabric is still the NHDPlusV2: https://
 Updates to the registry will be applied for all mainstems. Categories of change include:
 
 1. the 33564 will be updated in place to now indicate that the Version 2.0 network at https://doi.org/doi:10.5066/P976XCVT is now the connecting network that should be used for that mainstem.
-1. the 161 superseded mainstems will not be altered but new mainstems will be added and the old ones will be linked to their replacement(s) in the mainstem lookup table published via geoconnex.us. 
-1. the 23 that are in error had empty geometry and have not been used. They will remain in the registry and no longer appear in the mainstem lookup table.
-1. the 105 with new outlets will not be altered but will have a new row in the registry with the new outlet.
+2. the 161 superseded mainstems will not be altered but new mainstems will be added and the old ones will be linked to their replacement(s) in the mainstem lookup table published via geoconnex.us. 
+3. the 23 that are in error had empty geometry and have not been used. They will remain in the registry and no longer appear in the mainstem lookup table.
+4. the 105 with new outlets will not be altered but will have a new row in the registry with the new outlet.
 
 reference mainstems v1
 ========================
