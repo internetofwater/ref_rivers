@@ -3,6 +3,8 @@ reference mainstems v3.0.1
 
 v3.0.1 introduces a lookup table from mainstem uri to nhdplushr id
 
+v3.0.1 is primarily a post-process validation release. No meaningful changes have been made to mainstems. A small number (15) of mainstems that were missed in 3.0.0 validation have been marked as superseded.
+
 reference mainstems v3
 ========================
 
