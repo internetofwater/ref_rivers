@@ -1,3 +1,8 @@
+reference mainstems v3.1.1
+========================
+
+v3.1.1 is a minor patch that updates the nhdphr_lookup.csv output file. No other changes occurred.
+
 reference mainstems v3.1
 ========================
 

@@ -633,44 +633,113 @@ get_nhdphr_source_extra <- function(new_net_nolp) {
               superseded = FALSE)
 }
 
+
+#' Add NHDPlusHR-Sourced Mainstem Geometries
+#'
+#' @description
+#' Handles all mainstems whose geometry must come from the NHDPlusHR reference
+#' network rather than NHDPlusV2, covering three categories defined in
+#' \code{changes}:
+#' \itemize{
+#'   \item \code{nhdphr_source_replace} -- existing mainstems whose geometry is
+#'     being updated to use the HR source.
+#'   \item \code{nhdphr_source_new} -- brand-new mainstems introduced from the
+#'     HR domain.
+#'   \item \code{nhdphr_source_extra} -- connectivity-gap mainstems
+#'     (\code{lp_mainstem_v3 > 7e6}) assembled by [get_nhdphr_source_extra()].
+#' }
+#' The extra mainstems arrive as an attribute-only summary (no geometry) because
+#' \code{get_nhdphr_source_extra} drops geometry via \code{summarize}. This
+#' function appends them to \code{ms_out} and then constructs directed
+#' LineString geometries for all three categories by collapsing per-flowline
+#' geometries from \code{new_net} in parallel.
+#'
+#' @param ms_out \code{sf} data frame produced by [clean_outlet()], containing
+#'   mainstem attributes for all change categories except the extra HR set.
+#' @param new_net Reference network \code{sf} object (one row per flowline)
+#'   supplying HR-sourced geometries; must contain \code{lp_mainstem_v3} and
+#'   \code{reference_mainstem}.
+#' @param nhdphr_source_extra Attribute-only data frame (no geometry column)
+#'   from [get_nhdphr_source_extra()], summarising the extra HR mainstems
+#'   (\code{lp_mainstem_v3 > 7e6}).
+#' @param changes Named list of change-set data frames from the targets
+#'   pipeline; \code{nhdphr_source_replace} and \code{nhdphr_source_new} are
+#'   used here.
+#'
+#' @return \code{ms_out} with (a) the extra HR mainstems appended and
+#'   (b) HR-sourced geometries collapsed from \code{new_net} and written into
+#'   the geometry column for all three categories.
 add_hr_mainstems <- function(ms_out, new_net, nhdphr_source_extra, changes) {
 
+  # Append the attribute summary of extra HR mainstems (lp_mainstem_v3 > 7e6);
+  # they have no geometry yet -- it is assigned below along with the other
+  # HR-sourced categories.
   ms_out <- bind_rows(ms_out, nhdphr_source_extra)
-  
+
+  # Coerce to numeric so range-based membership tests work correctly against
+  # the numeric lp_mainstem_v3 values in the change sets.
   new_net$lp_mainstem_v3 <- as.numeric(new_net$lp_mainstem_v3)
-  
-  nhdphr_source <- filter(new_net, lp_mainstem_v3 %in% c(changes$nhdphr_source_replace$lp_mainstem_v3, 
-                                                         changes$nhdphr_source_new$lp_mainstem_v3, 
+
+  # Collect all new_net flowlines belonging to the three HR-sourced categories.
+  nhdphr_source <- filter(new_net, lp_mainstem_v3 %in% c(changes$nhdphr_source_replace$lp_mainstem_v3,
+                                                         changes$nhdphr_source_new$lp_mainstem_v3,
                                                          nhdphr_source_extra$lp_mainstem_v3)) |>
     mutate(lp_mainstem_v3 = as.numeric(lp_mainstem_v3))
-  
-  # verify that we have things all lined up
+
+  # Validate that any URI already assigned in ms_out for an HR mainstem matches
+  # the reference_mainstem recorded in new_net for the same lp_mainstem_v3.
+  # NAs are expected for the newly appended extra mainstems, which have no URI
+  # until add_ref_uri() runs in the next step.
   check <- inner_join(select(st_drop_geometry(ms_out), lp_mainstem_v3, uri),
-                      select(st_drop_geometry(nhdphr_source), lp_mainstem_v3, uri_update = reference_mainstem), 
+                      select(st_drop_geometry(nhdphr_source), lp_mainstem_v3, uri_update = reference_mainstem),
                       by = "lp_mainstem_v3")
-  
+
   stopifnot(all(is.na(check$uri) | check$uri == check$uri_update))
-    
+
+  # Sort flowlines headwater-first (desc topo_sort) so collapse_lines produces
+  # a directed LineString flowing toward the outlet. Group by mainstem and
+  # split into 80 work chunks for balanced parallel processing.
   nhdphr_source <- nhdphr_source |>
     hydroloom::add_topo_sort() |>
     select(lp_mainstem_v3, topo_sort) |>
-    arrange(desc(topo_sort)) |> 
+    arrange(desc(topo_sort)) |>
     group_by(lp_mainstem_v3) |>
     group_split(.keep = TRUE) |>
     split_number_chunks(80)
-  
+
+  # Spin up 8 parallel workers; on.exit ensures cleanup even if an error occurs.
   cl <- parallel::makeCluster(8)
-  
+
   on.exit(parallel::stopCluster(cl))
-  
+
+  # Capture the ordered lp_mainstem_v3 identifiers before collapse_lines
+  # flattens the nested list structure and discards the grouping keys.
   ids <- do.call(c, lapply(nhdphr_source, \(x) unique(do.call(c, lapply(x, \(y) y$lp_mainstem_v3)))))
-  
+
+  # Collapse each mainstem's flowline segments into a single LineString in parallel.
   nhdphr_source <- do.call(c, pbapply::pblapply(nhdphr_source, collapse_lines, cl = cl))
-  
+
+  # Pair each collapsed geometry with its mainstem identifier.
   nhdphr_source <- st_sf(lp_mainstem_v3 = ids,
-                         geom = nhdphr_source)  
-  
+                         geom = nhdphr_source)
+
+  # Write new geometries back into ms_out by position, matched on lp_mainstem_v3.
   ms_out$geom[match(nhdphr_source$lp_mainstem_v3, ms_out$lp_mainstem_v3)] <- nhdphr_source$geom
+
+  # https://github.com/internetofwater/ref_rivers/issues/18
+  hr_lps <- filter(new_net, source == "nhdphr")$lp_mainstem_v3
+  
+  hr_head_patch <- filter(sf::st_drop_geometry(new_net), lp_mainstem_v3 %in% hr_lps) |>
+    hydroloom::sort_network() |>
+    group_by(lp_mainstem_v3) |>
+    mutate(id = gsub("nhdphr-", "", id)) |>
+    mutate(head_nhdplushr_id = id[1], outlet_nhdplushr_id = id[n()]) |>
+    select(lp_mainstem_v3, head_nhdplushr_id, outlet_nhdplushr_id) |>
+    distinct() |>
+    ungroup()
+
+  # use update here so we get anything that's out of sync with the new_net updated and correct
+  ms_out <- dplyr::rows_update(as.data.frame(ms_out), hr_head_patch, by = "lp_mainstem_v3", unmatched = "ignore") |> sf::st_sf()
 
   ms_out
 }
