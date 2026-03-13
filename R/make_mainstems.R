@@ -728,16 +728,18 @@ add_hr_mainstems <- function(ms_out, new_net, nhdphr_source_extra, changes) {
 
   # https://github.com/internetofwater/ref_rivers/issues/18
   hr_lps <- filter(new_net, source == "nhdphr")$lp_mainstem_v3
-  missing_hr_head <- filter(ms_out, is.na(head_nhdplushr_id) & lp_mainstem_v3 %in% hr_lps)
-  hr_head_patch <- filter(sf::st_drop_geometry(new_net), lp_mainstem_v3 %in% missing_hr_head$lp_mainstem_v3) |>
+  
+  hr_head_patch <- filter(sf::st_drop_geometry(new_net), lp_mainstem_v3 %in% hr_lps) |>
     hydroloom::sort_network() |>
     group_by(lp_mainstem_v3) |>
     mutate(id = gsub("nhdphr-", "", id)) |>
     mutate(head_nhdplushr_id = id[1], outlet_nhdplushr_id = id[n()]) |>
     select(lp_mainstem_v3, head_nhdplushr_id, outlet_nhdplushr_id) |>
-    distinct()
+    distinct() |>
+    ungroup()
 
-  ms_out <- dplyr::rows_patch(as.data.frame(ms_out), hr_head_patch, by = "lp_mainstem_v3", unmatched = "ignore") |> sf::st_sf()
+  # use update here so we get anything that's out of sync with the new_net updated and correct
+  ms_out <- dplyr::rows_update(as.data.frame(ms_out), hr_head_patch, by = "lp_mainstem_v3", unmatched = "ignore") |> sf::st_sf()
 
   ms_out
 }
