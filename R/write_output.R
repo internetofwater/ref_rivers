@@ -355,17 +355,6 @@ assign_mainstems_to_flowlines <- function(hr_out_1, hr_ref_net) {
 
   still_missed <- path_fixes_df$uri[is.na(path_fixes_df$id)]
 
-  # TODO: get to the bottom of why these are overlapping
-  path_fixes_df <- filter(path_fixes_df, !is.na(id)) |>
-    filter(uri != "https://geoconnex.us/ref/mainstems/2636486") # busted
-
-  path_1 <- path_fixes_df$id[path_fixes_df$uri == "https://geoconnex.us/ref/mainstems/878793"]
-  path_2 <- path_fixes_df$id[path_fixes_df$uri == "https://geoconnex.us/ref/mainstems/412800"]
-
-  path_fixes_df$uri[path_fixes_df$id %in% path_1[path_1 %in% path_2]] <- "https://geoconnex.us/ref/mainstems/412800"
-  path_fixes_df$head_nhdplushr_id[path_fixes_df$uri == "https://geoconnex.us/ref/mainstems/412800"] <- "23002800025263"
-  path_fixes_df$outlet_nhdplushr_id[path_fixes_df$uri == "https://geoconnex.us/ref/mainstems/412800"] <- "23002800026353"
-
   path_fixes_df <- distinct(path_fixes_df)
 
   stopifnot(any(duplicated(path_fixes_df$nhdplushr_id)))
@@ -377,16 +366,15 @@ assign_mainstems_to_flowlines <- function(hr_out_1, hr_ref_net) {
   # expect all URIs to be present because we initialized with heads
   stopifnot(all(path_fixes_df$uri %in% out$uri))
 
+  # we need to update these -- they are where a previous assignment was wrong
   update <- select(filter(path_fixes_df, id %in% out$id), id, uri)
   
-  update$uri[update$id == "nhdphr-23002800086456"] <- "https://geoconnex.us/ref/mainstems/332734"
-
   update <- distinct(update)
 
   stopifnot(!any(duplicated(update$id)))
 
   # need to add rows and then update rows
-  out2 <- out |>
+  out <- out |>
     select(-outlet_check, -toid) |>
     bind_rows(filter(path_fixes_df, !nhdplushr_id %in% out$nhdplushr_id)) |>
     rows_update(
@@ -395,57 +383,15 @@ assign_mainstems_to_flowlines <- function(hr_out_1, hr_ref_net) {
     ) |>
     distinct()
 
-  stopifnot(!any(duplicated(out2$nhdplushr_id)))
+  # TODO check after #
+  if(sum(is.na(out$$nhdplushr_id)) < 5) { # this will likely be fixed but doing this as a gaurd for now
+    out <- filter(out, !is.na(nhdplushr_id))
+  }
+
+  stopifnot(!any(duplicated(out$nhdplushr_id)))
   
   # NA are the ones that we couldn't get above
   stopifnot(all(sort(out$uri[is.na(out$nhdplushr_id)]) == sort(still_missed)))
 
   out
-}
-
-## UNUSED
-#' Walk network to find mainstem flowlines for unmatched URIs
-#'
-#' For mainstems not resolved by levelpath or prior tracing, walks the full
-#' reference network from head to outlet to collect all flowline IDs.
-#'
-#' @param missed data.frame with uri, head_nhdplushr_id, and outlet_nhdplushr_id
-#' @param ref_net sf data.frame full reference network
-#' @return data.frame with uri, id, nhdplushr_id, levelpath columns
-#' @keywords internal
-walk_network_find_mainstem <- function(missed, ref_net) {
-
-  ref_ind <- hydroloom::make_index_ids(ref_net, mode = "to")
-
-  stopifnot(max(ref_ind$lengths) == 1)
-
-  paths <- pbapply::pblapply(
-    seq_len(nrow(missed)),
-    function(row) {
-      # needs to work for the whole network
-      head <- missed$head_nhdplushr_id[row]
-      head <- ifelse(grepl("nhdpv2", head), paste0("nhdphr-", head), head)
-      tryCatch({
-        path <- unname(unlist(
-          hydroloom:::navigate_network_dfs(
-            ref_ind,
-            head,
-            "down"
-          )
-        ))
-        out_ind <- which(path == paste0("nhdphr-", missed$outlet_nhdplushr_id[row]))
-        if (length(out_ind) != 1) stop()
-        path[1:out_ind]
-      }, error = function(e) NULL)
-    }
-  )
-
-  dplyr::tibble(
-    uri = missed$uri,
-    id = paths
-  ) |>
-    tidyr::unnest(id, keep_empty = TRUE) |>
-    filter(!is.na(id)) |>
-    mutate(nhdplushr_id = gsub("nhdphr-", "", id)) |>
-    left_join(select(hr_ref_net, id, levelpath), by = "id")
 }
