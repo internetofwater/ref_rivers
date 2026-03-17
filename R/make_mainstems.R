@@ -84,6 +84,8 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
   # Extract distinct downstream mainstem relationships, resolving duplicates and validating connectivity.
   new_dm <- get_new_dm(new_net_nolp, enhd_v3)
 
+  changes$add <- fix_hr_outlets(changes$add, new_net, readr::read_csv("data/review/drop_diverted_outlet.csv", col_types = "ccc"))
+
   # Reconcile superseded, kept, deprecated, added, and replaced mainstems into a unified output dataset.
   ms_out_1 <- get_ms_out(ref_rivers, changes)
 
@@ -118,6 +120,47 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
   ms_out$outlet_nhdpv2_COMID[ms_out$uri == "https://geoconnex.us/ref/mainstems/2183898"] <- ""
 
   ms_out
+}
+
+# we have a bunch of lp mainstems (nhdplusv2) that span multiple levelpaths (nhdplushr)
+# the outlet of the top levelpath needs to be the outlet of the lp mainstem
+fix_hr_outlets <- function(adds, new_net, to_fix) {
+
+  # the complete paths we need to look at
+  paths <- filter(new_net, lp_mainstem_v3 %in% to_fix$lp_mainstem_v3)
+
+  # make sure we have everything we need
+  stopifnot(all(to_fix$lp_mainstem_v3 %in% paths$lp_mainstem_v3))
+  stopifnot(all(to_fix$levelpath_unique %in% paths$levelpath))
+
+  # expect more levelpaths
+  stopifnot(length(unique(paths$levelpath)) > length(unique(paths$lp_mainstem_v3)))
+
+  paths2 <- sf::st_drop_geometry(paths) |>
+    # type conversion for join
+    mutate(lp_mainstem_v3 = as.numeric(lp_mainstem_v3)) |>
+    # join incoming mainstems to get head and outlet id
+    left_join(select(sf::st_drop_geometry(adds), lp_mainstem_v3, head_nhdplushr_id, outlet_nhdplushr_id), by = "lp_mainstem_v3") |>
+    # group by the path we want a new outlet for
+    group_by(levelpath) |>
+    # we only care about the levelpath with the lpv3 head
+    mutate(has_head = any(gsub("nhdphr-", "", id) == head_nhdplushr_id)) |>
+    # filter so we only have what we need
+    filter(has_head)
+  
+  # expect one levelpath per lpv3
+  stopifnot(length(unique(paths2$levelpath)) == length(unique(paths2$lp_mainstem_v3)))
+
+  paths2 <- paths2 |>
+    mutate(head_nhdplushr_id_check = gsub("nhdphr-", "", id[1]), outlet_nhdplushr_id = gsub("nhdphr-", "", id[n()]))
+
+  # sanity check that the heads were the same
+  stopifnot(all(paths2$head_nhdplushr_id_check == paths2$head_nhdplushr_id))
+
+  paths2 <- select(ungroup(paths2), lp_mainstem_v3, outlet_nhdplushr_id) |>
+    distinct()
+
+  dplyr::rows_update(as.data.frame(adds), paths2, by = "lp_mainstem_v3") |> sf::st_sf()
 }
 
 #' Write the lp_mainstem_v3 Lookup Table
@@ -376,6 +419,9 @@ validate_mainstems <- function(ms_out) {
 
   # more lenient on drainage area
   stopifnot(all(is.na(ms_out$outlet_drainagearea_sqkm) | (ms_out$outlet_drainagearea_sqkm >= 0 & ms_out$outlet_drainagearea_sqkm < 3e6)))
+
+  # "nhdpv2" can not appear in the nhdplushr head and outlet ids
+  stopifnot(!any(grepl("nhdpv2", ms_out$head_nhdplushr_id) | grepl("nhdpv2", ms_out$outlet_nhdplushr_id)))
 
   TRUE
 }
@@ -855,10 +901,38 @@ add_hr_mainstems <- function(ms_out, new_net, nhdphr_source_extra, changes) {
 
   stopifnot(all(is.na(check$uri) | check$uri == check$uri_update))
 
+  # need to check that the tonode is the fromnode of the feature that toid indicates
+  # some cross vpu connections have messed up from/tonode entries
+  nhdphr_source <- nhdphr_source |>
+    left_join(select(
+      sf::st_drop_geometry(nhdphr_source), id, tonode_update = fromnode
+    ), by = c("toid" = "id"))
+
+  # just being super careful -- see https://code.usgs.gov/wma/nhgf/reference-fabric/reference-network/-/issues/16
+  stopifnot(nhdphr_source$lp_mainstem_v3[
+    !is.na(nhdphr_source$tonode) & 
+      !is.na(nhdphr_source$tonode_update) & 
+      nhdphr_source$tonode != nhdphr_source$tonode_update
+  ] == c(148852, 148852, 148774, 1009084, 2208010, 2204387))
+
+  nhdphr_source <- nhdphr_source |>
+    mutate(tonode = ifelse(!is.na(tonode_update) & tonode_update != tonode, tonode_update, tonode)) |>
+    select(-tonode_update)
+
+  update_topo_sort <- select(sf::st_drop_geometry(nhdphr_source), id, fromnode, tonode, divergence) |>
+    hydroloom::add_toids(return_dendritic = FALSE) |>
+    hydroloom::add_topo_sort() |>
+    select(id, topo_sort) |>
+    distinct()
+
+  stopifnot(!any(duplicated(update_topo_sort$id)))
+
   # Sort flowlines headwater-first (desc topo_sort) so collapse_lines produces
   # a directed LineString flowing toward the outlet. Group by mainstem and
   # split into 80 work chunks for balanced parallel processing.
   nhdphr_source <- nhdphr_source |>
+    select(-topo_sort) |>
+    left_join(update_topo_sort, by = "id") |>
     select(lp_mainstem_v3, topo_sort) |>
     arrange(desc(topo_sort)) |>
     group_by(lp_mainstem_v3) |>

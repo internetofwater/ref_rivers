@@ -384,7 +384,7 @@ assign_mainstems_to_flowlines <- function(hr_out_1, hr_ref_net) {
     distinct()
 
   # TODO check after #
-  if(sum(is.na(out$$nhdplushr_id)) < 5) { # this will likely be fixed but doing this as a gaurd for now
+  if(sum(is.na(out$nhdplushr_id)) < 5) { # this will likely be fixed but doing this as a gaurd for now
     out <- filter(out, !is.na(nhdplushr_id))
   }
 
