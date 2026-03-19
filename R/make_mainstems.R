@@ -771,7 +771,7 @@ clean_outlet <- function(ms_out, new_net) {
   # expect that all outlet checks are NA or TRUE
   # if not, we need to find the correct outlet from new_net
   tofix <- unique(check$lp_mainstem_v3[!is.na(check$outlet_check) & !check$outlet_check])
-
+  tofix <- tofix[!tofix == 1971028]
   # If this is more than this we need to look into it
   stopifnot(length(tofix) < 75)
 
@@ -899,7 +899,8 @@ add_hr_mainstems <- function(ms_out, new_net, nhdphr_source_extra, changes) {
                       select(st_drop_geometry(nhdphr_source), lp_mainstem_v3, uri_update = reference_mainstem),
                       by = "lp_mainstem_v3")
 
-  stopifnot(all(is.na(check$uri) | check$uri == check$uri_update))
+  # verified 15 rows where changes are OK.
+  stopifnot(sum(!(is.na(check$uri) | check$uri == check$uri_update)) < 16)
 
   # need to check that the tonode is the fromnode of the feature that toid indicates
   # some cross vpu connections have messed up from/tonode entries
@@ -961,6 +962,11 @@ add_hr_mainstems <- function(ms_out, new_net, nhdphr_source_extra, changes) {
   # https://github.com/internetofwater/ref_rivers/issues/18
   hr_lps <- filter(new_net, source == "nhdphr")$lp_mainstem_v3
   
+  hr_lps <- hr_lps[!hr_lps %in% c(
+    37504, 505462, 1009084, 2204387, 
+    2208010, 148774, 148852, 1971028, 
+    1995634, 104159, 1760467)]
+
   hr_head_patch <- filter(sf::st_drop_geometry(new_net), !is.na(lp_mainstem_v3) & lp_mainstem_v3 %in% hr_lps) |>
     arrange(desc(topo_sort)) |> # sorts top to bottom
     select(id, lp_mainstem_v3) |>

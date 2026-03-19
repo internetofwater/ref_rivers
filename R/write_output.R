@@ -357,7 +357,7 @@ assign_mainstems_to_flowlines <- function(hr_out_1, hr_ref_net) {
 
   path_fixes_df <- distinct(path_fixes_df)
 
-  stopifnot(any(duplicated(path_fixes_df$nhdplushr_id)))
+  stopifnot(!any(duplicated(path_fixes_df$nhdplushr_id)))
 
   # expect some but not all
   stopifnot(any(path_fixes_df$id %in% out$id))
@@ -382,11 +382,6 @@ assign_mainstems_to_flowlines <- function(hr_out_1, hr_ref_net) {
      by = "id"
     ) |>
     distinct()
-
-  # TODO check after #
-  if(sum(is.na(out$nhdplushr_id)) < 5) { # this will likely be fixed but doing this as a gaurd for now
-    out <- filter(out, !is.na(nhdplushr_id))
-  }
 
   stopifnot(!any(duplicated(out$nhdplushr_id)))
   
