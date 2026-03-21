@@ -87,19 +87,21 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
   changes$add <- fix_hr_outlets(changes$add, new_net, readr::read_csv("data/review/drop_diverted_outlet.csv", col_types = "ccc"))
 
   # Reconcile superseded, kept, deprecated, added, and replaced mainstems into a unified output dataset.
-  ms_out_1 <- get_ms_out(ref_rivers, changes)
+  ms_out <- get_ms_out(ref_rivers, changes)
 
   # Verify each outlet id is a member of its assigned levelpath, fixing discrepancies where needed.
-  ms_out_2 <- clean_outlet(ms_out_1, new_net)
+  ms_out <- clean_outlet(ms_out, new_net)
 
   # Combine mainstem data with NHDPlusHR source info and construct HR mainstem geometries in parallel.
-  ms_out <- add_hr_mainstems(ms_out_2, new_net, get_nhdphr_source_extra(new_net_nolp), changes)
+  ms_out <- add_hr_mainstems(ms_out, new_net, get_nhdphr_source_extra(new_net_nolp), changes)
+  rm(new_net, new_net_nolp, changes); gc()
 
   # Match mainstems with existing reference river ids based on headwater locations to assign uris.
   ms_out <- add_ref_uri(ms_out, ref_rivers, drop_ms)
 
   # Join downstream mainstem relationships and remove orphaned mainstems lacking valid connections.
   ms_out <- add_dn_ms(ms_out, new_dm, ref_rivers, drop_ms)
+  rm(new_dm); gc()
 
   # Identify available mainstem ids in the sequence and assign them to new mainstems.
   ms_out <- assign_new_ms_ids(ms_out)
@@ -114,10 +116,67 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
   stopifnot(!any(is.na(ms_out$uri)))
   stopifnot(!any(is.na(ms_out$id)))
   stopifnot(all(ref_rivers$uri %in% ms_out$uri))
+  rm(ref_rivers, drop_ms); gc()
 
   # somehow these get flipped to NA Maybe track down where?
   ms_out$head_nhdpv2_COMID[ms_out$uri == "https://geoconnex.us/ref/mainstems/2183898"] <- ""
   ms_out$outlet_nhdpv2_COMID[ms_out$uri == "https://geoconnex.us/ref/mainstems/2183898"] <- ""
+
+  new <- readr::read_csv("data/review/new_ms_updates.csv")
+
+  update <- dplyr::group_by(new, uri) |>
+    dplyr::summarise(
+      new_mainstemid = paste0(
+        "['", paste(new_mainstem, collapse = "', '"), "']"
+      )
+    )
+
+  ms_out <- as.data.frame(ms_out) |>
+    dplyr::rows_update(update, by = "uri") |>
+    sf::st_sf()
+
+  unwrap <- function(vec) {
+    lapply(vec, function(x) {
+      if (is.na(x) | x == "") return("")
+      x <- gsub("'|\\[|\\]", "", x)
+      trimws(unlist(strsplit(x, ","), use.names = FALSE))
+    })
+  }
+
+  all_new <- unwrap(ms_out$new_mainstemid)
+
+  remove <- c(
+  `https://geoconnex.us/ref/mainstems/1921673` = "https://geoconnex.us/ref/mainstems/2244483",
+  `https://geoconnex.us/ref/mainstems/2323762` = "https://geoconnex.us/ref/mainstems/2078529",
+  `https://geoconnex.us/ref/mainstems/189071` = "https://geoconnex.us/ref/mainstems/239979",
+  `https://geoconnex.us/ref/mainstems/2290511` = "https://geoconnex.us/ref/mainstems/2573716",
+  `https://geoconnex.us/ref/mainstems/2028663` = "https://geoconnex.us/ref/mainstems/2577508",
+  `https://geoconnex.us/ref/mainstems/2028588` = "https://geoconnex.us/ref/mainstems/2577508",
+  `https://geoconnex.us/ref/mainstems/2025657` = "https://geoconnex.us/ref/mainstems/2588994",
+  `https://geoconnex.us/ref/mainstems/2614006` = "https://geoconnex.us/ref/mainstems/2592308"
+  )
+
+  for(r in seq_len(length(remove))) {
+    row <- which(ms_out$uri == remove[r])
+    message(ms_out$new_mainstemid[row])
+    message(all_new[[row]])
+    all_new[[row]] <- all_new[[row]][all_new[[row]] != names(remove)[r]]
+    if(length(all_new[[row]]) == 0 || all_new[[row]] == "") {
+      update <- ""
+    } else {
+      update <- paste0(
+        "['", paste(all_new[[row]], collapse = "', '"), "']"
+      )
+    }
+    message(
+
+    update  
+
+    )
+    ms_out$new_mainstemid[row] <- update
+  }
+
+  ms_out$downstream_mainstem_id[ms_out$superseded] <- ""
 
   ms_out
 }
@@ -210,7 +269,14 @@ make_mainstems <- function(ms_out) {
 #'
 #' @return \code{network} with an added \code{down_levelpaths} character column.
 add_dm <- function(network) {
-  
+
+  lp_to_uri <- select(st_drop_geometry(network), levelpathi, uri) |>
+    filter(!is.na(levelpathi)) |>
+    distinct()
+
+  stopifnot(!any(duplicated(lp_to_uri$levelpathi)))
+  stopifnot(!any(duplicated(lp_to_uri$uri)))
+
   lp <- select(st_drop_geometry(network), levelpathi, dnlevelpat) |>
     filter(!is.na(levelpathi) & levelpathi != dnlevelpat)
   
@@ -234,11 +300,25 @@ add_dm <- function(network) {
   
   all_lp <- pbapply::pblapply(all_lp, get_dlp, dnlp = dnlp)
 
-  all_lp <- data.frame(levelpathi = unique(lp$levelpathi),
-                       dnlp = sapply(all_lp, function(x) if(length(x) > 0) {
-                         paste0("['", paste(paste0("https://geoconnex.us/ref/mainstems/", x), 
-                                            collapse = "', '"), "']")
-                         } else NA))
+  # expand chains to long-form, join URIs, then collapse back
+  all_lp_long <- data.frame(
+    levelpathi = rep(unique(lp$levelpathi), lengths(all_lp)),
+    dn_lp = unlist(all_lp)
+  )
+
+  all_lp_long <- dplyr::inner_join(all_lp_long, lp_to_uri,
+                                    by = c("dn_lp" = "levelpathi"))
+
+  all_lp <- dplyr::group_by(all_lp_long, levelpathi) |>
+    dplyr::summarize(dnlp = paste0("['", paste(uri, collapse = "', '"), "']"),
+                     .groups = "drop") |>
+    as.data.frame()
+
+  # add back any levelpaths with no downstream URIs
+  missing_lp <- unique(lp$levelpathi)[!unique(lp$levelpathi) %in% all_lp$levelpathi]
+  if (length(missing_lp) > 0) {
+    all_lp <- rbind(all_lp, data.frame(levelpathi = missing_lp, dnlp = NA_character_))
+  }
   
   network |>
     left_join(all_lp, by = "levelpathi") |>
@@ -367,63 +447,157 @@ make_nonref <- function(mainstems, new_net, lookup, out_f = "out/extra_mainstems
 #'
 #' @return \code{TRUE} invisibly if all checks pass; stops with an error otherwise.
 validate_mainstems <- function(ms_out) {
-  
-  # must be 4326
-  stopifnot(sf::st_crs(ms_out) == sf::st_crs(4326))
-  
-  # must be LINESTRING
-  stopifnot(sf::st_geometry_type(ms_out, by_geometry = FALSE) == "LINESTRING")
-  
-  # expect ID to be in character format
-  stopifnot(is.character(ms_out$id))
-  
-  # names need to include all of these (geometry has been removed)
-  stopifnot(all(c(
-    "id", "uri", "featuretype", "downstream_mainstem_id", "encompassing_mainstem_basins", 
-"name_at_outlet", "name_at_outlet_gnis_id", "primary_name", "primary_name_gnis_id", 
-"lengthkm", "outlet_drainagearea_sqkm", "head_nhdpv2_COMID", 
-"outlet_nhdpv2_COMID", "head_nhdplushr_id", "outlet_nhdplushr_id", 
-"head_nhd_permid", "outlet_nhd_permid", "head_nhdpv2HUC12", "outlet_nhdpv2HUC12", 
-"head_rf1ID", "outlet_rf1ID", "head_nhdpv1_COMID", "outlet_nhdpv1_COMID", 
-"head_2020HUC12", "outlet_2020HUC12", "superseded", "new_mainstemid") %in% names(ms_out)))
- 
-  check_uri <- function(x, rgx, missing = "") {
 
+  check <- function(cond, msg) {
+    if (!isTRUE(cond)) stop("validate_mainstems: ", msg, call. = FALSE)
+  }
+
+  check_uri <- function(x, rgx, missing = "") {
     if(isFALSE(missing)) {
-      stopifnot(all(grepl(rgx, x)))
+      check(all(grepl(rgx, x)),
+            paste0("URI pattern mismatch for field with regex: ", rgx))
     } else {
-      stopifnot(all(grepl(rgx, x) | x == missing))
+      check(all(grepl(rgx, x) | x == missing),
+            paste0("URI pattern mismatch for field with regex: ", rgx))
     }
   }
-  
-  # URI checks
+
+  # ── Schema & Types ─────────────────────────────────────────────────────────
+
+  check(sf::st_crs(ms_out) == sf::st_crs(4326),
+        "CRS must be EPSG:4326")
+
+  check(sf::st_geometry_type(ms_out, by_geometry = FALSE) == "LINESTRING",
+        "Geometry must be LINESTRING")
+
+  check(is.character(ms_out$id),
+        "id must be character")
+
+  check(is.logical(ms_out$superseded),
+        "superseded must be logical")
+
+  expected_type <- "['https://www.opengis.net/def/schema/hy_features/hyf/HY_FlowPath', 'https://www.opengis.net/def/schema/hy_features/hyf/HY_WaterBody']"
+  check(all(ms_out$featuretype == expected_type),
+        "featuretype must match expected HY_Features type string")
+
+  required_cols <- c(
+    "id", "uri", "featuretype", "downstream_mainstem_id",
+    "encompassing_mainstem_basins", "name_at_outlet",
+    "name_at_outlet_gnis_id", "primary_name", "primary_name_gnis_id",
+    "lengthkm", "outlet_drainagearea_sqkm", "head_nhdpv2_COMID",
+    "outlet_nhdpv2_COMID", "head_nhdplushr_id", "outlet_nhdplushr_id",
+    "head_nhd_permid", "outlet_nhd_permid", "head_nhdpv2HUC12",
+    "outlet_nhdpv2HUC12", "head_rf1ID", "outlet_rf1ID",
+    "head_nhdpv1_COMID", "outlet_nhdpv1_COMID", "head_2020HUC12",
+    "outlet_2020HUC12", "superseded", "new_mainstemid")
+  missing_cols <- setdiff(required_cols, names(ms_out))
+  check(length(missing_cols) == 0,
+        paste0("Missing required columns: ", paste(missing_cols, collapse = ", ")))
+
+  # ── Uniqueness ─────────────────────────────────────────────────────────────
+
+  check(!any(duplicated(ms_out$id)),
+        "Duplicate id values found")
+
+  check(!any(duplicated(ms_out$uri)),
+        "Duplicate uri values found")
+
+  non_empty_head_v2 <- ms_out$head_nhdpv2_COMID[ms_out$head_nhdpv2_COMID != "" & !ms_out$superseded]
+  check(!any(duplicated(non_empty_head_v2)),
+        "Duplicate non-empty head_nhdpv2_COMID values found")
+
+  # ── Completeness ───────────────────────────────────────────────────────────
+
+  check(!any(is.na(ms_out$uri)),
+        "NA values found in uri")
+
+  check(!any(is.na(ms_out$id)),
+        "NA values found in id")
+
+  check(all(!is.na(ms_out$uri[ms_out$superseded]) &
+              ms_out$uri[ms_out$superseded] != ""),
+        "Superseded rows must have non-empty uri")
+
+  check(all(!is.na(ms_out$id[ms_out$superseded]) &
+              ms_out$id[ms_out$superseded] != ""),
+        "Superseded rows must have non-empty id")
+
+  active <- ms_out[!ms_out$superseded, ]
+  has_v2 <- active$head_nhdpv2_COMID != "" & active$outlet_nhdpv2_COMID != ""
+  has_hr <- active$head_nhdplushr_id != "" & active$outlet_nhdplushr_id != ""
+  check(all(has_v2 | has_hr),
+        "Non-superseded rows must have at least one head/outlet ID pair (v2 or HR)")
+
+  # ── URI Pattern Checks ─────────────────────────────────────────────────────
+
   check_uri(ms_out$uri, "^https://geoconnex\\.us/ref/mainstems/\\d+$", FALSE)
   check_uri(ms_out$name_at_outlet_gnis_id, "^https://geoconnex\\.us/usgs/gnis/\\d+$", "")
   check_uri(ms_out$primary_name_gnis_id, "^https://geoconnex\\.us/usgs/gnis/\\d+$", "")
   check_uri(ms_out$head_nhdpv2_COMID, "^https://geoconnex\\.us/nhdplusv2/comid/\\d+$", "")
-  check_uri(ms_out$outlet_nhdpv2_COMID, "^https://geoconnex\\.us/nhdplusv2/comid/\\d+$", "") 
+  check_uri(ms_out$outlet_nhdpv2_COMID, "^https://geoconnex\\.us/nhdplusv2/comid/\\d+$", "")
   check_uri(ms_out$head_nhdpv2HUC12, "^https://geoconnex\\.us/nhdplusv2/huc12/\\d+$", "")
   check_uri(ms_out$outlet_nhdpv2HUC12, "^https://geoconnex\\.us/nhdplusv2/huc12/\\d+$", "")
-
-  # all new mainstemid must be not superseded
-  # checks that none of the new_mainsteid entries are superseded 
-  stopifnot(!all(unlist(ms_out$new_mainstemid) %in% ms_out$uri[!ms_out$superseded]))
-
-  # all mainstem topology goes to stuff that exists
-  # checks that none of the active topology goes to superseded mainstems
-  stopifnot(!all(unlist(ms_out$downstream_mainstem_id) %in% ms_out$uri[!ms_out$superseded]))
-  stopifnot(!all(unlist(ms_out$encompassing_mainstem_basins) %in% ms_out$uri[!ms_out$superseded]))
-
-  # length must be positive and less than 5000km
-  stopifnot(all(ms_out$lengthkm > 0 & ms_out$lengthkm < 5000))
-
-  # more lenient on drainage area
-  stopifnot(all(is.na(ms_out$outlet_drainagearea_sqkm) | (ms_out$outlet_drainagearea_sqkm >= 0 & ms_out$outlet_drainagearea_sqkm < 3e6)))
+  # check_uri(ms_out$head_nhdplushr_id, "^nhdphr-\\d+$", "")
+  # check_uri(ms_out$outlet_nhdplushr_id, "^nhdphr-\\d+$", "")
 
   # "nhdpv2" can not appear in the nhdplushr head and outlet ids
-  stopifnot(!any(grepl("nhdpv2", ms_out$head_nhdplushr_id) | grepl("nhdpv2", ms_out$outlet_nhdplushr_id)))
+  check(!any(grepl("nhdpv2", ms_out$head_nhdplushr_id) |
+               grepl("nhdpv2", ms_out$outlet_nhdplushr_id)),
+        "nhdpv2 string found in nhdplushr ID fields")
 
-  TRUE
+  # ── Topology & Referential Integrity ────────────────────────────────────────
+
+  # TODO: review logic on these three checks -- !all(x %in% non_superseded)
+  # may be inverted from intent (see plan notes)
+  # all new mainstemid must be not superseded
+  
+  unwrap <- function(vec) {
+    vec <- vec[vec != ""]
+    vec <- gsub("'|\\[|\\]", "", vec)
+    trimws(unlist(strsplit(vec, ","), use.names = FALSE))
+  }
+  
+  all_new <- unwrap(unlist(ms_out$new_mainstemid))
+
+  missing <- all_new[!all_new %in% ms_out$uri[!ms_out$superseded]]
+
+  # non-empty new_mainstemid must reference an existing uri
+  check(length(missing) == 0,
+        "new_mainstemid contains URIs not found in ms_out$uri")
+
+  # all mainstem topology goes to stuff that exists
+  missing <- ms_out$downstream_mainstem_id[ms_out$downstream_mainstem_id != "" &!ms_out$downstream_mainstem_id %in% ms_out$uri[!ms_out$superseded]]
+
+  # non-empty downstream_mainstem_id must reference an existing uri
+  
+  check(length(missing) == 0,
+       "downstream_mainstem_id contains URIs not found in ms_out$uri")
+
+  all_encompassing <- unwrap(unlist(ms_out$encompassing_mainstem_basins))
+
+  missing <- unique(all_encompassing[!all_encompassing %in% ms_out$uri[!ms_out$superseded]])
+
+  stopifnot(length(missing) == 0)
+
+  check(length(missing) == 0,
+        "encompassing_mainstem_basins contains URIs not found in ms_out$uri")
+
+  # ── Cross-field Consistency ─────────────────────────────────────────────────
+
+  check(all(ms_out$downstream_mainstem_id[ms_out$superseded] == ""),
+      "Superseded rows must have empty downstream_mainstem_id")
+
+  # ── Numeric Range Checks ────────────────────────────────────────────────────
+
+  check(all(ms_out$lengthkm > 0 & ms_out$lengthkm < 5000),
+        "lengthkm must be > 0 and < 5000")
+
+  check(all(is.na(ms_out$outlet_drainagearea_sqkm) |
+              (ms_out$outlet_drainagearea_sqkm >= 0 &
+                 ms_out$outlet_drainagearea_sqkm < 3e6)),
+        "outlet_drainagearea_sqkm must be NA or in [0, 3e6)")
+
+  invisible(TRUE)
 }
 
 # Also defined in https://code.usgs.gov/wma/nhgf/reference-fabric/reference-network
@@ -1138,8 +1312,8 @@ add_dm_ms_id <- function(ms_out) {
   
   stopifnot(!any(duplicated(dm$lp_mainstem_v3)))
   
-  left_join(ms_out, dm, by = "lp_mainstem_v3")
-  
+  left_join(ms_out, dm, by = c("dnlpv3" = "lp_mainstem_v3"))
+
 }
 
 #' Apply Final Schema, Formatting, and CRS to Mainstems
