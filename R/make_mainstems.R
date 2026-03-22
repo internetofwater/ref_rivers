@@ -10,6 +10,20 @@
 # out_f <- "out/mainstems.gpkg"
 # source("R/get_data.R")
 
+#' Initialize and Assemble the Full Mainstems Dataset
+#'
+#' Orchestrates the end-to-end construction of the reference mainstems dataset
+#' by loading inputs, running validation, reconciling all change categories
+#' (keep / deprecate / add / HR-replace), assigning geometries and URIs, and
+#' linking downstream topology.
+#'
+#' @param enhd_v3 Path to the ENHD v3 parquet file supplying downstream levelpath info.
+#' @param ref_rivers Path to the existing reference rivers geopackage (layer \code{"mainstems"}).
+#' @param new_net Path to the updated reference network sf geopackage.
+#' @param hr_net Path to the NHDPlusHR network CSV supplying permanent-id lookups.
+#' @param changes Named list of change-set data frames (keep, deprecate, add, nhdphr_source_replace, etc.).
+#'
+#' @return An \code{sf} data frame of all reference mainstems, ready for writing.
 initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) {
   ref_rivers <- sf::read_sf(ref_rivers, "mainstems")
   new_net <- sf::read_sf(new_net)
@@ -70,6 +84,8 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
   # Extract distinct downstream mainstem relationships, resolving duplicates and validating connectivity.
   new_dm <- get_new_dm(new_net_nolp, enhd_v3)
 
+  changes$add <- fix_hr_outlets(changes$add, new_net, readr::read_csv("data/review/drop_diverted_outlet.csv", col_types = "ccc"))
+
   # Reconcile superseded, kept, deprecated, added, and replaced mainstems into a unified output dataset.
   ms_out <- get_ms_out(ref_rivers, changes)
 
@@ -78,12 +94,14 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
 
   # Combine mainstem data with NHDPlusHR source info and construct HR mainstem geometries in parallel.
   ms_out <- add_hr_mainstems(ms_out, new_net, get_nhdphr_source_extra(new_net_nolp), changes)
+  rm(new_net, new_net_nolp, changes); gc()
 
   # Match mainstems with existing reference river ids based on headwater locations to assign uris.
   ms_out <- add_ref_uri(ms_out, ref_rivers, drop_ms)
 
   # Join downstream mainstem relationships and remove orphaned mainstems lacking valid connections.
   ms_out <- add_dn_ms(ms_out, new_dm, ref_rivers, drop_ms)
+  rm(new_dm); gc()
 
   # Identify available mainstem ids in the sequence and assign them to new mainstems.
   ms_out <- assign_new_ms_ids(ms_out)
@@ -98,14 +116,122 @@ initialize_mainstems <- function(enhd_v3, ref_rivers, new_net, hr_net, changes) 
   stopifnot(!any(is.na(ms_out$uri)))
   stopifnot(!any(is.na(ms_out$id)))
   stopifnot(all(ref_rivers$uri %in% ms_out$uri))
+  rm(ref_rivers, drop_ms); gc()
 
   # somehow these get flipped to NA Maybe track down where?
   ms_out$head_nhdpv2_COMID[ms_out$uri == "https://geoconnex.us/ref/mainstems/2183898"] <- ""
   ms_out$outlet_nhdpv2_COMID[ms_out$uri == "https://geoconnex.us/ref/mainstems/2183898"] <- ""
 
+  new <- readr::read_csv("data/review/new_ms_updates.csv")
+
+  update <- dplyr::group_by(new, uri) |>
+    dplyr::summarise(
+      new_mainstemid = paste0(
+        "['", paste(new_mainstem, collapse = "', '"), "']"
+      )
+    )
+
+  ms_out <- as.data.frame(ms_out) |>
+    dplyr::rows_update(update, by = "uri") |>
+    sf::st_sf()
+
+  unwrap <- function(vec) {
+    lapply(vec, function(x) {
+      if (is.na(x) | x == "") return("")
+      x <- gsub("'|\\[|\\]", "", x)
+      trimws(unlist(strsplit(x, ","), use.names = FALSE))
+    })
+  }
+
+  all_new <- unwrap(ms_out$new_mainstemid)
+
+  remove <- c(
+  `https://geoconnex.us/ref/mainstems/1921673` = "https://geoconnex.us/ref/mainstems/2244483",
+  `https://geoconnex.us/ref/mainstems/2323762` = "https://geoconnex.us/ref/mainstems/2078529",
+  `https://geoconnex.us/ref/mainstems/189071` = "https://geoconnex.us/ref/mainstems/239979",
+  `https://geoconnex.us/ref/mainstems/2290511` = "https://geoconnex.us/ref/mainstems/2573716",
+  `https://geoconnex.us/ref/mainstems/2028663` = "https://geoconnex.us/ref/mainstems/2577508",
+  `https://geoconnex.us/ref/mainstems/2028588` = "https://geoconnex.us/ref/mainstems/2577508",
+  `https://geoconnex.us/ref/mainstems/2025657` = "https://geoconnex.us/ref/mainstems/2588994",
+  `https://geoconnex.us/ref/mainstems/2614006` = "https://geoconnex.us/ref/mainstems/2592308"
+  )
+
+  for(r in seq_len(length(remove))) {
+    row <- which(ms_out$uri == remove[r])
+    message(ms_out$new_mainstemid[row])
+    message(all_new[[row]])
+    all_new[[row]] <- all_new[[row]][all_new[[row]] != names(remove)[r]]
+    if(length(all_new[[row]]) == 0 || all_new[[row]] == "") {
+      update <- ""
+    } else {
+      update <- paste0(
+        "['", paste(all_new[[row]], collapse = "', '"), "']"
+      )
+    }
+    message(
+
+    update  
+
+    )
+    ms_out$new_mainstemid[row] <- update
+  }
+
+  ms_out$downstream_mainstem_id[ms_out$superseded] <- ""
+
   ms_out
 }
 
+# we have a bunch of lp mainstems (nhdplusv2) that span multiple levelpaths (nhdplushr)
+# the outlet of the top levelpath needs to be the outlet of the lp mainstem
+fix_hr_outlets <- function(adds, new_net, to_fix) {
+
+  # the complete paths we need to look at
+  paths <- filter(new_net, lp_mainstem_v3 %in% to_fix$lp_mainstem_v3)
+
+  # make sure we have everything we need
+  stopifnot(all(to_fix$lp_mainstem_v3 %in% paths$lp_mainstem_v3))
+  stopifnot(all(to_fix$levelpath_unique %in% paths$levelpath))
+
+  # expect more levelpaths
+  stopifnot(length(unique(paths$levelpath)) > length(unique(paths$lp_mainstem_v3)))
+
+  paths2 <- sf::st_drop_geometry(paths) |>
+    # type conversion for join
+    mutate(lp_mainstem_v3 = as.numeric(lp_mainstem_v3)) |>
+    # join incoming mainstems to get head and outlet id
+    left_join(select(sf::st_drop_geometry(adds), lp_mainstem_v3, head_nhdplushr_id, outlet_nhdplushr_id), by = "lp_mainstem_v3") |>
+    # group by the path we want a new outlet for
+    group_by(levelpath) |>
+    # we only care about the levelpath with the lpv3 head
+    mutate(has_head = any(gsub("nhdphr-", "", id) == head_nhdplushr_id)) |>
+    # filter so we only have what we need
+    filter(has_head)
+  
+  # expect one levelpath per lpv3
+  stopifnot(length(unique(paths2$levelpath)) == length(unique(paths2$lp_mainstem_v3)))
+
+  paths2 <- paths2 |>
+    mutate(head_nhdplushr_id_check = gsub("nhdphr-", "", id[1]), outlet_nhdplushr_id = gsub("nhdphr-", "", id[n()]))
+
+  # sanity check that the heads were the same
+  stopifnot(all(paths2$head_nhdplushr_id_check == paths2$head_nhdplushr_id))
+
+  paths2 <- select(ungroup(paths2), lp_mainstem_v3, outlet_nhdplushr_id) |>
+    distinct()
+
+  dplyr::rows_update(as.data.frame(adds), paths2, by = "lp_mainstem_v3") |> sf::st_sf()
+}
+
+#' Write the lp_mainstem_v3 Lookup Table
+#'
+#' Exports a two-column CSV mapping each active mainstem URI to its
+#' \code{lp_mainstem_v3} identifier; used downstream for validation and
+#' cross-version reconciliation.
+#'
+#' @param ms_out \code{sf} data frame returned by [initialize_mainstems()].
+#' @param lpv3_lookup_file Output CSV path (default \code{"out/lpv3_lookup.csv"}).
+#'
+#' @return Invisibly returns \code{lpv3_lookup_file}.
 write_lp_v3_lookup <- function(ms_out, lpv3_lookup_file = "out/lpv3_lookup.csv") {
   # write lpv3_lookup 
   st_drop_geometry(ms_out) |>
@@ -117,14 +243,40 @@ write_lp_v3_lookup <- function(ms_out, lpv3_lookup_file = "out/lpv3_lookup.csv")
   lpv3_lookup_file
 }
 
+#' Finalize the Mainstems Output
+#'
+#' Thin wrapper that calls [make_clean_mainstems()] to apply final schema
+#' selection, name formatting, CRS enforcement, and length correction before
+#' the dataset is written to disk.
+#'
+#' @param ms_out \code{sf} data frame returned by [initialize_mainstems()].
+#'
+#' @return A cleaned \code{sf} data frame ready for output.
 make_mainstems <- function(ms_out) {
 
   ms_out <- make_clean_mainstems(ms_out)
 
 }
 
+#' Add Full Downstream Levelpath Chains
+#'
+#' Recursively resolves the complete chain of downstream levelpaths for every
+#' mainstem in \code{network} and appends the result as a JSON-array string
+#' column \code{down_levelpaths}; called inside [add_dn_ms()].
+#'
+#' @param network \code{sf} data frame containing \code{levelpathi} and
+#'   \code{dnlevelpat} columns.
+#'
+#' @return \code{network} with an added \code{down_levelpaths} character column.
 add_dm <- function(network) {
-  
+
+  lp_to_uri <- select(st_drop_geometry(network), levelpathi, uri) |>
+    filter(!is.na(levelpathi)) |>
+    distinct()
+
+  stopifnot(!any(duplicated(lp_to_uri$levelpathi)))
+  stopifnot(!any(duplicated(lp_to_uri$uri)))
+
   lp <- select(st_drop_geometry(network), levelpathi, dnlevelpat) |>
     filter(!is.na(levelpathi) & levelpathi != dnlevelpat)
   
@@ -148,21 +300,55 @@ add_dm <- function(network) {
   
   all_lp <- pbapply::pblapply(all_lp, get_dlp, dnlp = dnlp)
 
-  all_lp <- data.frame(levelpathi = unique(lp$levelpathi),
-                       dnlp = sapply(all_lp, function(x) if(length(x) > 0) {
-                         paste0("['", paste(paste0("https://geoconnex.us/ref/mainstems/", x), 
-                                            collapse = "', '"), "']")
-                         } else NA))
+  # expand chains to long-form, join URIs, then collapse back
+  all_lp_long <- data.frame(
+    levelpathi = rep(unique(lp$levelpathi), lengths(all_lp)),
+    dn_lp = unlist(all_lp)
+  )
+
+  all_lp_long <- dplyr::inner_join(all_lp_long, lp_to_uri,
+                                    by = c("dn_lp" = "levelpathi"))
+
+  all_lp <- dplyr::group_by(all_lp_long, levelpathi) |>
+    dplyr::summarize(dnlp = paste0("['", paste(uri, collapse = "', '"), "']"),
+                     .groups = "drop") |>
+    as.data.frame()
+
+  # add back any levelpaths with no downstream URIs
+  missing_lp <- unique(lp$levelpathi)[!unique(lp$levelpathi) %in% all_lp$levelpathi]
+  if (length(missing_lp) > 0) {
+    all_lp <- rbind(all_lp, data.frame(levelpathi = missing_lp, dnlp = NA_character_))
+  }
   
   network |>
     left_join(all_lp, by = "levelpathi") |>
     rename(down_levelpaths = dnlp)
 }
 
+#' Split a Vector into N Balanced Chunks
+#'
+#' Divides vector \code{x} into \code{n} roughly equal-sized groups; used to
+#' partition mainstem lists for balanced parallel processing in
+#' [add_hr_mainstems()] and [make_nonref()].
+#'
+#' @param x A vector to split.
+#' @param n Number of chunks to produce.
+#'
+#' @return A list of length \code{n} containing subsets of \code{x}.
 split_number_chunks <- function(x, n) {
   split(x, cut(seq_along(x), n, labels = FALSE))
 }
 
+#' Collapse a List of sf Geometries into Single LineStrings
+#'
+#' Merges each element of \code{g} (an sf object with multiple flowline
+#' segments) into a single 2-D LineString; used in [add_hr_mainstems()] and
+#' [make_nonref()] before writing geometries back to the mainstem layer.
+#'
+#' @param g A list of \code{sf} objects, each containing one or more linestring
+#'   features to collapse.
+#'
+#' @return An \code{sfc} of LineStrings, one per element of \code{g}.
 collapse_lines <- function(g) {
   
   get_single_line <- function(gg) {
@@ -182,6 +368,19 @@ collapse_lines <- function(g) {
 # mainstems <- sf::read_sf("out/mainstems.gpkg", "mainstems")
 # new_net <- tar_read("ref_net_v1")
 # lookup <- "out/nhdpv2_lookup.csv"
+#' Build Non-Reference Mainstem Geometries
+#'
+#' Constructs mainstem-level summaries and collapsed LineString geometries for
+#' flowlines in the reference network that are not covered by the core reference
+#' mainstems (NHDPlusHR features without a v3 levelpath assignment, and NHDPlusV2
+#' features absent from the lookup table), writing the result to a geopackage.
+#'
+#' @param mainstems \code{sf} data frame of existing reference mainstems.
+#' @param new_net Path to the reference network geopackage.
+#' @param lookup Path to the NHDPlusV2 lookup CSV mapping COMIDs to network ids.
+#' @param out_f Output geopackage path (default \code{"out/extra_mainstems.gpkg"}).
+#'
+#' @return Invisibly returns the written \code{sf} object of extra mainstems.
 make_nonref <- function(mainstems, new_net, lookup, out_f = "out/extra_mainstems.gpkg") {
   new_net <- sf::read_sf(new_net)
   lookup <- readr::read_csv(lookup)
@@ -237,61 +436,168 @@ make_nonref <- function(mainstems, new_net, lookup, out_f = "out/extra_mainstems
   sf::write_sf(out, out_f, "extra_mainstems")
 }
 
+#' Validate the Final Mainstems Dataset
+#'
+#' Runs a comprehensive suite of assertions on the completed mainstems
+#' \code{sf} object — checking CRS, geometry type, required columns, URI
+#' patterns, topology integrity, and numeric ranges — before the dataset
+#' is written to disk.
+#'
+#' @param ms_out \code{sf} data frame returned by [make_mainstems()].
+#'
+#' @return \code{TRUE} invisibly if all checks pass; stops with an error otherwise.
 validate_mainstems <- function(ms_out) {
-  
-  # must be 4326
-  stopifnot(sf::st_crs(ms_out) == sf::st_crs(4326))
-  
-  # must be LINESTRING
-  stopifnot(sf::st_geometry_type(ms_out, by_geometry = FALSE) == "LINESTRING")
-  
-  # expect ID to be in character format
-  stopifnot(is.character(ms_out$id))
-  
-  # names need to include all of these (geometry has been removed)
-  stopifnot(all(c(
-    "id", "uri", "featuretype", "downstream_mainstem_id", "encompassing_mainstem_basins", 
-"name_at_outlet", "name_at_outlet_gnis_id", "primary_name", "primary_name_gnis_id", 
-"lengthkm", "outlet_drainagearea_sqkm", "head_nhdpv2_COMID", 
-"outlet_nhdpv2_COMID", "head_nhdplushr_id", "outlet_nhdplushr_id", 
-"head_nhd_permid", "outlet_nhd_permid", "head_nhdpv2HUC12", "outlet_nhdpv2HUC12", 
-"head_rf1ID", "outlet_rf1ID", "head_nhdpv1_COMID", "outlet_nhdpv1_COMID", 
-"head_2020HUC12", "outlet_2020HUC12", "superseded", "new_mainstemid") %in% names(ms_out)))
- 
-  check_uri <- function(x, rgx, missing = "") {
 
+  check <- function(cond, msg) {
+    if (!isTRUE(cond)) stop("validate_mainstems: ", msg, call. = FALSE)
+  }
+
+  check_uri <- function(x, rgx, missing = "") {
     if(isFALSE(missing)) {
-      stopifnot(all(grepl(rgx, x)))
+      check(all(grepl(rgx, x)),
+            paste0("URI pattern mismatch for field with regex: ", rgx))
     } else {
-      stopifnot(all(grepl(rgx, x) | x == missing))
+      check(all(grepl(rgx, x) | x == missing),
+            paste0("URI pattern mismatch for field with regex: ", rgx))
     }
   }
-  
-  # URI checks
+
+  # ── Schema & Types ─────────────────────────────────────────────────────────
+
+  check(sf::st_crs(ms_out) == sf::st_crs(4326),
+        "CRS must be EPSG:4326")
+
+  check(sf::st_geometry_type(ms_out, by_geometry = FALSE) == "LINESTRING",
+        "Geometry must be LINESTRING")
+
+  check(is.character(ms_out$id),
+        "id must be character")
+
+  check(is.logical(ms_out$superseded),
+        "superseded must be logical")
+
+  expected_type <- "['https://www.opengis.net/def/schema/hy_features/hyf/HY_FlowPath', 'https://www.opengis.net/def/schema/hy_features/hyf/HY_WaterBody']"
+  check(all(ms_out$featuretype == expected_type),
+        "featuretype must match expected HY_Features type string")
+
+  required_cols <- c(
+    "id", "uri", "featuretype", "downstream_mainstem_id",
+    "encompassing_mainstem_basins", "name_at_outlet",
+    "name_at_outlet_gnis_id", "primary_name", "primary_name_gnis_id",
+    "lengthkm", "outlet_drainagearea_sqkm", "head_nhdpv2_COMID",
+    "outlet_nhdpv2_COMID", "head_nhdplushr_id", "outlet_nhdplushr_id",
+    "head_nhd_permid", "outlet_nhd_permid", "head_nhdpv2HUC12",
+    "outlet_nhdpv2HUC12", "head_rf1ID", "outlet_rf1ID",
+    "head_nhdpv1_COMID", "outlet_nhdpv1_COMID", "head_2020HUC12",
+    "outlet_2020HUC12", "superseded", "new_mainstemid")
+  missing_cols <- setdiff(required_cols, names(ms_out))
+  check(length(missing_cols) == 0,
+        paste0("Missing required columns: ", paste(missing_cols, collapse = ", ")))
+
+  # ── Uniqueness ─────────────────────────────────────────────────────────────
+
+  check(!any(duplicated(ms_out$id)),
+        "Duplicate id values found")
+
+  check(!any(duplicated(ms_out$uri)),
+        "Duplicate uri values found")
+
+  non_empty_head_v2 <- ms_out$head_nhdpv2_COMID[ms_out$head_nhdpv2_COMID != "" & !ms_out$superseded]
+  check(!any(duplicated(non_empty_head_v2)),
+        "Duplicate non-empty head_nhdpv2_COMID values found")
+
+  # ── Completeness ───────────────────────────────────────────────────────────
+
+  check(!any(is.na(ms_out$uri)),
+        "NA values found in uri")
+
+  check(!any(is.na(ms_out$id)),
+        "NA values found in id")
+
+  check(all(!is.na(ms_out$uri[ms_out$superseded]) &
+              ms_out$uri[ms_out$superseded] != ""),
+        "Superseded rows must have non-empty uri")
+
+  check(all(!is.na(ms_out$id[ms_out$superseded]) &
+              ms_out$id[ms_out$superseded] != ""),
+        "Superseded rows must have non-empty id")
+
+  active <- ms_out[!ms_out$superseded, ]
+  has_v2 <- active$head_nhdpv2_COMID != "" & active$outlet_nhdpv2_COMID != ""
+  has_hr <- active$head_nhdplushr_id != "" & active$outlet_nhdplushr_id != ""
+  check(all(has_v2 | has_hr),
+        "Non-superseded rows must have at least one head/outlet ID pair (v2 or HR)")
+
+  # ── URI Pattern Checks ─────────────────────────────────────────────────────
+
   check_uri(ms_out$uri, "^https://geoconnex\\.us/ref/mainstems/\\d+$", FALSE)
   check_uri(ms_out$name_at_outlet_gnis_id, "^https://geoconnex\\.us/usgs/gnis/\\d+$", "")
   check_uri(ms_out$primary_name_gnis_id, "^https://geoconnex\\.us/usgs/gnis/\\d+$", "")
   check_uri(ms_out$head_nhdpv2_COMID, "^https://geoconnex\\.us/nhdplusv2/comid/\\d+$", "")
-  check_uri(ms_out$outlet_nhdpv2_COMID, "^https://geoconnex\\.us/nhdplusv2/comid/\\d+$", "") 
+  check_uri(ms_out$outlet_nhdpv2_COMID, "^https://geoconnex\\.us/nhdplusv2/comid/\\d+$", "")
   check_uri(ms_out$head_nhdpv2HUC12, "^https://geoconnex\\.us/nhdplusv2/huc12/\\d+$", "")
   check_uri(ms_out$outlet_nhdpv2HUC12, "^https://geoconnex\\.us/nhdplusv2/huc12/\\d+$", "")
+  # check_uri(ms_out$head_nhdplushr_id, "^nhdphr-\\d+$", "")
+  # check_uri(ms_out$outlet_nhdplushr_id, "^nhdphr-\\d+$", "")
 
+  # "nhdpv2" can not appear in the nhdplushr head and outlet ids
+  check(!any(grepl("nhdpv2", ms_out$head_nhdplushr_id) |
+               grepl("nhdpv2", ms_out$outlet_nhdplushr_id)),
+        "nhdpv2 string found in nhdplushr ID fields")
+
+  # ── Topology & Referential Integrity ────────────────────────────────────────
+
+  # TODO: review logic on these three checks -- !all(x %in% non_superseded)
+  # may be inverted from intent (see plan notes)
   # all new mainstemid must be not superseded
-  # checks that none of the new_mainsteid entries are superseded 
-  stopifnot(!all(unlist(ms_out$new_mainstemid) %in% ms_out$uri[!ms_out$superseded]))
+  
+  unwrap <- function(vec) {
+    vec <- vec[vec != ""]
+    vec <- gsub("'|\\[|\\]", "", vec)
+    trimws(unlist(strsplit(vec, ","), use.names = FALSE))
+  }
+  
+  all_new <- unwrap(unlist(ms_out$new_mainstemid))
+
+  missing <- all_new[!all_new %in% ms_out$uri[!ms_out$superseded]]
+
+  # non-empty new_mainstemid must reference an existing uri
+  check(length(missing) == 0,
+        "new_mainstemid contains URIs not found in ms_out$uri")
 
   # all mainstem topology goes to stuff that exists
-  # checks that none of the active topology goes to superseded mainstems
-  stopifnot(!all(unlist(ms_out$downstream_mainstem_id) %in% ms_out$uri[!ms_out$superseded]))
-  stopifnot(!all(unlist(ms_out$encompassing_mainstem_basins) %in% ms_out$uri[!ms_out$superseded]))
+  missing <- ms_out$downstream_mainstem_id[ms_out$downstream_mainstem_id != "" &!ms_out$downstream_mainstem_id %in% ms_out$uri[!ms_out$superseded]]
 
-  # length must be positive and less than 5000km
-  stopifnot(all(ms_out$lengthkm > 0 & ms_out$lengthkm < 5000))
+  # non-empty downstream_mainstem_id must reference an existing uri
+  
+  check(length(missing) == 0,
+       "downstream_mainstem_id contains URIs not found in ms_out$uri")
 
-  # more lenient on drainage area
-  stopifnot(all(is.na(ms_out$outlet_drainagearea_sqkm) | (ms_out$outlet_drainagearea_sqkm >= 0 & ms_out$outlet_drainagearea_sqkm < 3e6)))
+  all_encompassing <- unwrap(unlist(ms_out$encompassing_mainstem_basins))
 
-  TRUE
+  missing <- unique(all_encompassing[!all_encompassing %in% ms_out$uri[!ms_out$superseded]])
+
+  stopifnot(length(missing) == 0)
+
+  check(length(missing) == 0,
+        "encompassing_mainstem_basins contains URIs not found in ms_out$uri")
+
+  # ── Cross-field Consistency ─────────────────────────────────────────────────
+
+  check(all(ms_out$downstream_mainstem_id[ms_out$superseded] == ""),
+      "Superseded rows must have empty downstream_mainstem_id")
+
+  # ── Numeric Range Checks ────────────────────────────────────────────────────
+
+  check(all(ms_out$lengthkm > 0 & ms_out$lengthkm < 5000),
+        "lengthkm must be > 0 and < 5000")
+
+  check(all(is.na(ms_out$outlet_drainagearea_sqkm) |
+              (ms_out$outlet_drainagearea_sqkm >= 0 &
+                 ms_out$outlet_drainagearea_sqkm < 3e6)),
+        "outlet_drainagearea_sqkm must be NA or in [0, 3e6)")
+
+  invisible(TRUE)
 }
 
 # Also defined in https://code.usgs.gov/wma/nhgf/reference-fabric/reference-network
@@ -301,6 +607,21 @@ validate_mainstems <- function(ms_out) {
       trimws(paste0(prefix, format(ids, trim = TRUE, scientific = FALSE))))
   }
 
+#' Validate and Patch Reference Network Inputs
+#'
+#' Checks join-key uniqueness, ID formatting, and network outlet integrity on
+#' the input datasets, then patches in extra levelpath assignments for
+#' connectivity-gap mainstems listed in \code{add_extra_lookup}; called at the
+#' start of [initialize_mainstems()] via [validate_ms_inputs()].
+#'
+#' @param ref_rivers \code{sf} data frame of existing reference mainstems.
+#' @param new_net \code{sf} data frame of the updated reference network flowlines.
+#' @param hr_net Data frame of NHDPlusHR network rows with \code{id} and \code{permid} columns.
+#' @param lookups Data frame mapping \code{uri} to \code{lp_mainstem_v3} from the prior lookup CSV.
+#' @param drop_ms Character vector of mainstem URIs to be superseded this run.
+#' @param add_extra_lookup Path to CSV of deprecated mainstems requiring extra levelpath patches.
+#'
+#' @return \code{new_net} with extra levelpath assignments applied where needed.
 validate_ms_inputs <- function(ref_rivers, new_net, hr_net, lookups, drop_ms, add_extra_lookup = "data/review/deprecated_lookup.csv") {
 
   hr_ids <- distinct(select(hr_net, nhdplushrid = id, permid))
@@ -333,9 +654,27 @@ validate_ms_inputs <- function(ref_rivers, new_net, hr_net, lookups, drop_ms, ad
   add_extra_lps <- data.frame(levelpath = add_extra_lps, lp_mainstem_v3 = format(seq(8e6, 8e6 + length(add_extra_lps) - 1), scientific = FALSE))
 
   ## need to grab what is being replaced and discount it from lookups ##
-  dplyr::rows_update(as.data.frame(new_net), add_extra_lps, by = "levelpath") |> sf::st_sf()
+  new_net <- dplyr::rows_update(as.data.frame(new_net), add_extra_lps, by = "levelpath") |> sf::st_sf()
+
+  topo_sort <- select(sf::st_drop_geometry(new_net), id, fromnode, tonode, divergence) |>
+    hydroloom::add_toids(return_dendritic = FALSE) |>
+    hydroloom::add_topo_sort() |>
+    select(id, topo_sort) |>
+    distinct()
+
+  left_join(new_net, topo_sort, by = "id")
+
 }
 
+#' Filter Reference Network to Levepath-Assigned Rows
+#'
+#' Restricts the reference network to rows with a valid \code{lp_mainstem_v3},
+#' joins downstream levelpath information, then removes mainstems that are
+#' disconnected from the rest of the network; called inside [initialize_mainstems()].
+#'
+#' @param new_net \code{sf} data frame of the validated reference network from [validate_ms_inputs()].
+#'
+#' @return A non-spatial data frame of connected, levelpath-assigned network rows.
 get_new_net_nolp <- function(new_net) {
   # we are only considering where lp_mainstem_v3 is populated
   # NOTE that some lp_mainstem_v3 values in this are newly introduced and will not join 
@@ -370,6 +709,16 @@ get_new_net_nolp <- function(new_net) {
   new_net_nolp
 }
 
+#' Derive Distinct Downstream Mainstem Relationships
+#'
+#' Builds a one-row-per-mainstem lookup of downstream levelpath values,
+#' resolving duplicate downstream assignments by cross-referencing the ENHD v3
+#' network and a small set of manual overrides; called inside [initialize_mainstems()].
+#'
+#' @param new_net_nolp Non-spatial data frame from [get_new_net_nolp()].
+#' @param enhd_v3 ENHD v3 data frame supplying authoritative downstream levelpath values.
+#'
+#' @return A two-column data frame (\code{lp_mainstem_v3}, \code{dnlpv3}) with no duplicates.
 get_new_dm <- function(new_net_nolp, enhd_v3) {
   
   new_dm <- distinct(select(new_net_nolp, 
@@ -416,6 +765,17 @@ get_new_dm <- function(new_net_nolp, enhd_v3) {
   new_dm
 }
 
+#' Reconcile All Mainstem Change Categories into a Unified Dataset
+#'
+#' Combines the five change categories (previously superseded, kept, deprecated,
+#' added, and HR-sourced replacements/additions) from \code{ref_rivers} and
+#' \code{changes} into a single \code{sf} data frame with a consistent schema;
+#' called inside [initialize_mainstems()].
+#'
+#' @param ref_rivers \code{sf} data frame of existing reference mainstems.
+#' @param changes Named list of change-set data frames from the targets pipeline.
+#'
+#' @return An \code{sf} data frame of all mainstems with harmonized attributes.
 get_ms_out <- function(ref_rivers, changes) {
     ##################
   # reconcile and compile sources of mainstems
@@ -510,6 +870,16 @@ get_ms_out <- function(ref_rivers, changes) {
 }
 
 # double check that outlets are members of the path they should be.
+#' Verify and Correct Mainstem Outlet Assignments
+#'
+#' Checks that each mainstem's recorded head and outlet IDs are actually members
+#' of the correct levelpath in \code{new_net}, fixing mismatches by looking up
+#' the true topological outlet via topo-sort; called inside [initialize_mainstems()].
+#'
+#' @param ms_out \code{sf} data frame from [get_ms_out()].
+#' @param new_net \code{sf} data frame of the reference network flowlines.
+#'
+#' @return \code{ms_out} with corrected \code{outlet_nhdplushr_id} values where needed.
 clean_outlet <- function(ms_out, new_net) {
 
   # pecos outlet fix up
@@ -575,19 +945,18 @@ clean_outlet <- function(ms_out, new_net) {
   # expect that all outlet checks are NA or TRUE
   # if not, we need to find the correct outlet from new_net
   tofix <- unique(check$lp_mainstem_v3[!is.na(check$outlet_check) & !check$outlet_check])
-
+  tofix <- tofix[!tofix == 1971028]
   # If this is more than this we need to look into it
   stopifnot(length(tofix) < 75)
-
-  new_net <- hydroloom::add_topo_sort(new_net)
 
   outlets <- dplyr::select(sf::st_drop_geometry(new_net), id, topo_sort, lp_mainstem_v3) |>
     filter(lp_mainstem_v3 %in% tofix) |>
     group_by(lp_mainstem_v3) |>
-    filter(row_number() == n()) |>
+    arrange(desc(topo_sort)) |> # large are top small are bottom
+    filter(row_number() == n()) |> # n() is last row in group (outlet)
     ungroup() |>
     select(outlet_nhdplushr_id = id, lp_mainstem_v3) |>
-    mutate(lp_mainstem_v3 = as.numeric(lp_mainstem_v3),outlet_nhdplushr_id = gsub("nhdphr-", "", outlet_nhdplushr_id))
+    mutate(lp_mainstem_v3 = as.numeric(lp_mainstem_v3), outlet_nhdplushr_id = gsub("nhdphr-", "", outlet_nhdplushr_id))
 
   ms_out_update <- dplyr::rows_update(as.data.frame(ms_out), outlets, by = "lp_mainstem_v3") |> sf::st_sf()
 
@@ -603,6 +972,17 @@ clean_outlet <- function(ms_out, new_net) {
   ms_out_update
 }
 
+#' Summarize Extra NHDPlusHR-Sourced Mainstems
+#'
+#' Extracts connectivity-gap mainstems (\code{lp_mainstem_v3 > 7e6}) from the
+#' levelpath-assigned network, resolves the most common GNIS name per path, and
+#' returns a per-mainstem attribute summary (no geometry) for use in
+#' [add_hr_mainstems()].
+#'
+#' @param new_net_nolp Non-spatial data frame from [get_new_net_nolp()].
+#'
+#' @return A data frame with one row per extra HR mainstem and columns for name,
+#'   head/outlet IDs, length, and drainage area.
 get_nhdphr_source_extra <- function(new_net_nolp) {
    ### need to get geometry from new_net for the two nhdphr_source changes sets
 
@@ -620,8 +1000,7 @@ get_nhdphr_source_extra <- function(new_net_nolp) {
     distinct()
   
   left_join(nhdphr_source_extra, common_name, by = "lp_mainstem_v3") |>
-    hydroloom::add_topo_sort() |>
-    arrange(desc(topo_sort)) |> 
+    arrange(desc(topo_sort)) |> # top to bottom
     group_by(lp_mainstem_v3) |>
     summarize(lp_mainstem_v3 = lp_mainstem_v3[1],
               name_at_outlet = gnis_name[n()],
@@ -694,13 +1073,41 @@ add_hr_mainstems <- function(ms_out, new_net, nhdphr_source_extra, changes) {
                       select(st_drop_geometry(nhdphr_source), lp_mainstem_v3, uri_update = reference_mainstem),
                       by = "lp_mainstem_v3")
 
-  stopifnot(all(is.na(check$uri) | check$uri == check$uri_update))
+  # verified 15 rows where changes are OK.
+  stopifnot(sum(!(is.na(check$uri) | check$uri == check$uri_update)) < 16)
+
+  # need to check that the tonode is the fromnode of the feature that toid indicates
+  # some cross vpu connections have messed up from/tonode entries
+  nhdphr_source <- nhdphr_source |>
+    left_join(select(
+      sf::st_drop_geometry(nhdphr_source), id, tonode_update = fromnode
+    ), by = c("toid" = "id"))
+
+  # just being super careful -- see https://code.usgs.gov/wma/nhgf/reference-fabric/reference-network/-/issues/16
+  stopifnot(nhdphr_source$lp_mainstem_v3[
+    !is.na(nhdphr_source$tonode) & 
+      !is.na(nhdphr_source$tonode_update) & 
+      nhdphr_source$tonode != nhdphr_source$tonode_update
+  ] == c(148852, 148852, 148774, 1009084, 2208010, 2204387))
+
+  nhdphr_source <- nhdphr_source |>
+    mutate(tonode = ifelse(!is.na(tonode_update) & tonode_update != tonode, tonode_update, tonode)) |>
+    select(-tonode_update)
+
+  update_topo_sort <- select(sf::st_drop_geometry(nhdphr_source), id, fromnode, tonode, divergence) |>
+    hydroloom::add_toids(return_dendritic = FALSE) |>
+    hydroloom::add_topo_sort() |>
+    select(id, topo_sort) |>
+    distinct()
+
+  stopifnot(!any(duplicated(update_topo_sort$id)))
 
   # Sort flowlines headwater-first (desc topo_sort) so collapse_lines produces
   # a directed LineString flowing toward the outlet. Group by mainstem and
   # split into 80 work chunks for balanced parallel processing.
   nhdphr_source <- nhdphr_source |>
-    hydroloom::add_topo_sort() |>
+    select(-topo_sort) |>
+    left_join(update_topo_sort, by = "id") |>
     select(lp_mainstem_v3, topo_sort) |>
     arrange(desc(topo_sort)) |>
     group_by(lp_mainstem_v3) |>
@@ -729,8 +1136,14 @@ add_hr_mainstems <- function(ms_out, new_net, nhdphr_source_extra, changes) {
   # https://github.com/internetofwater/ref_rivers/issues/18
   hr_lps <- filter(new_net, source == "nhdphr")$lp_mainstem_v3
   
-  hr_head_patch <- filter(sf::st_drop_geometry(new_net), lp_mainstem_v3 %in% hr_lps) |>
-    hydroloom::sort_network() |>
+  hr_lps <- hr_lps[!hr_lps %in% c(
+    37504, 505462, 1009084, 2204387, 
+    2208010, 148774, 148852, 1971028, 
+    1995634, 104159, 1760467)]
+
+  hr_head_patch <- filter(sf::st_drop_geometry(new_net), !is.na(lp_mainstem_v3) & lp_mainstem_v3 %in% hr_lps) |>
+    arrange(desc(topo_sort)) |> # sorts top to bottom
+    select(id, lp_mainstem_v3) |>
     group_by(lp_mainstem_v3) |>
     mutate(id = gsub("nhdphr-", "", id)) |>
     mutate(head_nhdplushr_id = id[1], outlet_nhdplushr_id = id[n()]) |>
@@ -744,6 +1157,17 @@ add_hr_mainstems <- function(ms_out, new_net, nhdphr_source_extra, changes) {
   ms_out
 }
 
+#' Assign Reference URIs to Mainstems by Headwater Match
+#'
+#' Looks up existing reference mainstem IDs by matching NHDPlusV2 and
+#' NHDPlusHR headwater IDs, then constructs the full geoconnex URI for each
+#' mainstem; called inside [initialize_mainstems()].
+#'
+#' @param ms_out \code{sf} data frame from [add_hr_mainstems()].
+#' @param ref_rivers \code{sf} data frame of existing reference mainstems supplying the id lookup.
+#' @param drop_ms Character vector of mainstem URIs being superseded this run.
+#'
+#' @return \code{ms_out} with \code{uri} populated for all rows.
 add_ref_uri <- function(ms_out, ref_rivers, drop_ms) {
    # there are duplcate headwaters in superseded mainstems
   stopifnot(!any(is.na(ref_rivers$id[ref_rivers$superseded])))
@@ -788,6 +1212,19 @@ add_ref_uri <- function(ms_out, ref_rivers, drop_ms) {
 }
 
 
+#' Join Downstream Mainstem Topology and Remove Orphans
+#'
+#' Attaches downstream levelpath relationships from \code{new_dm} to each
+#' mainstem, removes newly introduced mainstems that lack valid downstream
+#' connections, and computes the full \code{down_levelpaths} chain via
+#' [add_dm()]; called inside [initialize_mainstems()].
+#'
+#' @param ms_out \code{sf} data frame from [add_ref_uri()].
+#' @param new_dm Two-column data frame from [get_new_dm()] (\code{lp_mainstem_v3}, \code{dnlpv3}).
+#' @param ref_rivers \code{sf} data frame of existing reference mainstems used for coverage checks.
+#' @param drop_ms Character vector of mainstem URIs being superseded this run.
+#'
+#' @return \code{ms_out} with \code{down_levelpaths} populated and orphaned rows removed.
 add_dn_ms <- function(ms_out, new_dm, ref_rivers, drop_ms) {
   ms_out <- left_join(ms_out, new_dm, by = c("lp_mainstem_v3")) |>
     mutate(levelpathi = lp_mainstem_v3, dnlevelpat = ifelse(is.na(dnlpv3), 0, dnlpv3))
@@ -830,6 +1267,15 @@ add_dn_ms <- function(ms_out, new_dm, ref_rivers, drop_ms) {
   ms_out
 }
 
+#' Assign IDs to New Mainstems from Available ID Space
+#'
+#' Identifies gaps in the current mainstem ID sequence and assigns them to any
+#' rows still lacking an ID; currently asserts that no unassigned rows exist
+#' (assignment logic is stubbed out pending future use).
+#'
+#' @param ms_out \code{sf} data frame from [add_dn_ms()].
+#'
+#' @return \code{ms_out} unchanged (stops if any IDs are missing).
 assign_new_ms_ids <- function(ms_out) {
 
   # some ids that need to be updated so we can get down mainstem later on.
@@ -849,6 +1295,15 @@ assign_new_ms_ids <- function(ms_out) {
   ms_out
 }
 
+#' Add Downstream Mainstem URI Column
+#'
+#' Joins each mainstem's \code{uri} back onto the dataset keyed by
+#' \code{lp_mainstem_v3} to populate the \code{downstream_mainstem_id} column;
+#' the final topology step called inside [initialize_mainstems()].
+#'
+#' @param ms_out \code{sf} data frame from [assign_new_ms_ids()].
+#'
+#' @return \code{ms_out} with \code{downstream_mainstem_id} populated.
 add_dm_ms_id <- function(ms_out) {
   dm <- select(st_drop_geometry(ms_out), 
     downstream_mainstem_id = uri, lp_mainstem_v3) |>
@@ -857,10 +1312,19 @@ add_dm_ms_id <- function(ms_out) {
   
   stopifnot(!any(duplicated(dm$lp_mainstem_v3)))
   
-  left_join(ms_out, dm, by = "lp_mainstem_v3")
-  
+  left_join(ms_out, dm, by = c("dnlpv3" = "lp_mainstem_v3"))
+
 }
 
+#' Apply Final Schema, Formatting, and CRS to Mainstems
+#'
+#' Selects and renames columns to the output schema, constructs geoconnex URIs
+#' for GNIS name IDs, corrects geometry-derived lengths, enforces EPSG:4326,
+#' and replaces remaining NAs with empty strings; called by [make_mainstems()].
+#'
+#' @param ms_out \code{sf} data frame from [initialize_mainstems()].
+#'
+#' @return A publication-ready \code{sf} data frame in EPSG:4326.
 make_clean_mainstems <- function(ms_out) {
   ms_out <- ms_out |>
     mutate(type = "['https://www.opengis.net/def/schema/hy_features/hyf/HY_FlowPath', 'https://www.opengis.net/def/schema/hy_features/hyf/HY_WaterBody']",

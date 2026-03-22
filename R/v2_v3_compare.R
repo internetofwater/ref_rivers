@@ -112,14 +112,16 @@ get_nhdplushr_domain_check_df <- function(nhdplushr_ref_net, old_ms, old_net, ne
   nhdplushr_ref_net <- filter(nhdplushr_ref_net, lp_mainstem_v3 %in% new_ms_no_v2$lp_mainstem_v3 | lp_mainstem_v3 > 7e6)
   
   # we have for sure accounted for all reference mainstems in new_ms_no_v2
-  stopifnot(all(nhdplushr_ref_net$reference_mainstem %in% new_ms_no_v2$reference_mainstem | nhdplushr_ref_net$lp_mainstem_v3 > 7e6))
+  # we dropped 14 (manually verified that these should be dropped)
+  stopifnot(!sum(!(nhdplushr_ref_net$reference_mainstem %in% new_ms_no_v2$reference_mainstem | nhdplushr_ref_net$lp_mainstem_v3 > 7e6)) > 14)
   
-  nhdplushr_ref_net <- arrange(nhdplushr_ref_net, reference_mainstem) |>
+  check_list <- arrange(nhdplushr_ref_net, reference_mainstem) |>
+    filter(reference_mainstem %in% new_ms_no_v2$reference_mainstem) |>
     group_by(reference_mainstem) |>
     group_split()
 
   new_ms_no_v2 <- arrange(new_ms_no_v2, reference_mainstem) |>
-    hydroloom::st_compatibalize(nhdplushr_ref_net[[1]])
+    hydroloom::st_compatibalize(check_list[[1]])
 
   # we have a unique data.frame keyed on reference_mainstem
   stopifnot(nrow(new_ms_no_v2) == length(unique(new_ms_no_v2$reference_mainstem)))
@@ -128,14 +130,11 @@ get_nhdplushr_domain_check_df <- function(nhdplushr_ref_net, old_ms, old_net, ne
     message(i)
     old <- new_ms_no_v2[i,]
     
-    new <- nhdplushr_ref_net[[i]]  
+    new <- check_list[[i]]  
   
     # we for sure have the same reference mainstem
     stopifnot(new$reference_mainstem[1] == old$reference_mainstem)
   
-    # TODO: remove the total_da_sqkm filter here once 
-    # https://code.usgs.gov/wma/nhgf/reference-fabric/reference-network/-/issues/6
-    # is done
     new_head <- filter(new, !id %in% toid) |>
       filter(total_da_sqkm == min(total_da_sqkm)) |>
       hydroloom::get_node("start")
