@@ -1,7 +1,15 @@
-reference mainstems v3.1.1
+reference mainstems v3.2
 ========================
 
-v3.1.1 is a minor patch that updates the nhdphr_lookup.csv output file. No other changes occurred.
+v3.2 improves the nhdplushr_lookup.csv output and fixes several issues:
+
+- Fix topo_sort bug related to HR representations
+- Fix missing nhdplushr head/outlet entries (#18)
+- Patch missing HR mainstems in lookup (#18)
+- Improve handling of duplicates and cross-region lookups
+- Fix major cross-domain river outlet ids (#22)
+- Update nhdplushr outlet ids (#21)
+- Add validation checks
 
 reference mainstems v3.1
 ========================
