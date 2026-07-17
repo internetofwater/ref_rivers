@@ -852,7 +852,10 @@ get_ms_out <- function(ref_rivers, changes) {
                       outlet_drainagearea_sqkm = "totdasqkm",
                       uri = "reference_mainstem",
                       length = "length")))  |>
-      select(-any_of(c("length", "totdasqkm", "lp_mainstem_v2", "level"))))
+      # NOTE: `level` (streamlevel) is retained so raw_mainstems can carry it
+      # into write_lookups() for precedence ordering of the HR crosswalk.
+      # make_clean_mainstems() drops it from the published mainstems schema.
+      select(-any_of(c("length", "totdasqkm", "lp_mainstem_v2"))))
   
   # TODO: validate that these have been removed once we are no longer relying on "changes" from v2 to v3
   # remove two duplicates that should not be in here
