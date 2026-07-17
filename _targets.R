@@ -49,7 +49,7 @@ list(
     sf::write_sf(mainstems, "out/mainstems.gpkg", "mainstems")
     "out/mainstems.gpkg"
   }, format = "file"),
-  tar_target(lookup, write_lookups(mainstems, enhd_v3, ref_net_v1, hr_net), format = "file"),
+  tar_target(lookup, write_lookups(mainstems, raw_mainstems, enhd_v3, hr_net), format = "file"),
   tar_target(validate, validate_mainstems(mainstems)),
   tar_target(non_ref_mainstems, make_nonref(
     mainstems = mainstems, 
