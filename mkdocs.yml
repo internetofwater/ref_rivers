@@ -1,0 +1,62 @@
+site_name: Reference Rivers
+site_description: Users manual for the reference mainstems registry and the data and services built on it
+site_url: https://internetofwater.github.io/ref_rivers/
+repo_url: https://github.com/internetofwater/ref_rivers
+repo_name: internetofwater/ref_rivers
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+  palette:
+    - scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Concepts:
+      - What a mainstem is: concepts/mainstems.md
+      - Mainstem identifiers: concepts/identifiers.md
+      - Persistence and change: concepts/persistence.md
+  - Using mainstems:
+      - Find the mainstem for a place: using/find.md
+      - Link your data to a mainstem: using/link.md
+      - Work with data linked to mainstems: using/linked-data.md
+  - Reference:
+      - Data products: reference/products.md
+      - Mainstem attributes: reference/attributes.md
+      - Where mainstems are used: reference/ecosystem.md
+  - Development:
+      - Build workflow: develop/workflow.md
+      - Releases and contributing: develop/contributing.md

@@ -1097,6 +1097,19 @@ add_hr_mainstems <- function(ms_out, new_net, nhdphr_source_extra, changes) {
     mutate(tonode = ifelse(!is.na(tonode_update) & tonode_update != tonode, tonode_update, tonode)) |>
     select(-tonode_update)
 
+  # the nhdplushr representation of the Yellowstone outlet is isolated in the
+  # reference network -- nothing points to it and its nodes match no other
+  # feature -- so add_topo_sort() puts it in a component of its own at the top of
+  # the sort. collapse_lines then starts the geometry at the outlet and jumps
+  # back to the head. Connect it below the nhdpv2 outlet of the same mainstem so
+  # it sorts last.
+  stopifnot(sum(nhdphr_source$id == "nhdphr-23000800031210") == 1,
+            sum(nhdphr_source$id == "nhdpv2-21873545") == 1,
+            !any(nhdphr_source$toid == "nhdphr-23000800031210"))
+
+  nhdphr_source$fromnode[nhdphr_source$id == "nhdphr-23000800031210"] <-
+    nhdphr_source$tonode[nhdphr_source$id == "nhdpv2-21873545"]
+
   update_topo_sort <- select(sf::st_drop_geometry(nhdphr_source), id, fromnode, tonode, divergence) |>
     hydroloom::add_toids(return_dendritic = FALSE) |>
     hydroloom::add_topo_sort() |>
