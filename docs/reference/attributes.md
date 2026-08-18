@@ -3,7 +3,7 @@
 These are the columns of `mainstems.gpkg` and the properties served by `reference.geoconnex.us`. Property names are lowercased in the served GeoJSON.
 
 !!! note "Two collections are currently served"
-    `https://geoconnex.us/ref/mainstems/{id}` resolves to the `mainstems` collection, which serves the v2-era subset of this schema — no `primary_name`, `head_nhdplushr_id`, or `head_nhd_permid`. The full v3 schema below is served by the `mainstems_v3` collection and is what the data release and `mainstems.gpkg` carry. The `datasets` array is attached to `mainstems`, because that is what the crawler sees resolved identifiers land on.
+    `https://geoconnex.us/ref/mainstems/{id}` resolves to the `mainstems` collection, which serves the v2-era subset of this schema — no `primary_name`, `head_nhdplushr_id`, or `head_nhd_permid`. The full v3 schema below is served by the `mainstems_v3` collection and is what the data release and `mainstems.gpkg` carry. The `datasets` array is attached to `mainstems`, because that is what the geoconnex crawler sees resolved identifiers land on.
 
 ## Identity
 
@@ -21,7 +21,7 @@ These are the columns of `mainstems.gpkg` and the properties served by `referenc
 ['https://www.opengis.net/def/schema/hy_features/hyf/HY_FlowPath', 'https://www.opengis.net/def/schema/hy_features/hyf/HY_WaterBody']
 ```
 
-The dual typing is not a hedge. A mainstem is composed of flowlines, and a flowline satisfies the waterbody-flowpath constraint of the hydrographic network — it is at once a flow path and a linear representation of a flowing body of water. Note that a polygonal waterbody is a separate feature type in the logical model and is not what this attribute refers to.
+A mainstem is composed of flowlines, and a flowline satisfies the [waterbody-flowpath constraint of the hydrographic network](https://docs.ogc.org/is/14-111r6/14-111r6.html#_hydrographic_network_2) — it is at once a flow path and a linear representation of a (atleast some times) flowing body of water. A polygonal waterbody is a separate feature type in the logical model and is not what this attribute refers to.
 
 ## Topology
 
@@ -58,7 +58,7 @@ Each mainstem carries head and outlet identifiers in every identifier system it 
 | `head_nhdplushr_id`, `outlet_nhdplushr_id` | NHDPlusHR identifiers |
 | `head_nhd_permid`, `outlet_nhd_permid` | NHD permanent identifiers, the link to 3DHP |
 | `head_nhdpv2HUC12`, `outlet_nhdpv2HUC12` | NHDPlusV2-era HUC12, as geoconnex URIs |
-| `head_2020HUC12`, `outlet_2020HUC12` | 2020 WBD HUC12 codes |
+| `head_2020HUC12`, `outlet_2020HUC12` | 2020 Watershed Boundary Dataset (WBD) HUC12 codes |
 | `head_nhdpv1_COMID`, `outlet_nhdpv1_COMID` | NHDPlusV1 COMID |
 | `head_rf1ID`, `outlet_rf1ID` | RF1 reach identifiers |
 

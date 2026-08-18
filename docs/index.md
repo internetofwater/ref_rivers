@@ -1,22 +1,23 @@
 # Reference Rivers
 
-Reference mainstems give every river in the United States a stable identifier that outlives the datasets used to draw it. A monitoring site, a model output, a permit, or a photograph can be tagged with a mainstem identifier once, and that tag keeps working when the underlying hydrography is replaced — because the identifier names the river, not a particular set of flowlines.
+Reference mainstems give every river in the United States a stable identifier that persists across the datasets used to represent it. A monitoring site, model output, a water-related permit, or a photograph of a river can be referenced to a mainstem once, and that reference will remain valid even when the underlying hydrography is replaced. A mainstem identifier is for a river, not a particular set of flowlines.
 
-The registry currently holds about 850,000 mainstem identifiers covering the conterminous United States and the parts of Canada and Mexico needed to close transboundary networks. Each identifier is defined by a headwater location, an outlet location, and a network dataset in which the path between them can be traced.
+The mainstem registry currently holds about 850,000 mainstem identifiers covering the conterminous United States and the parts of Canada and Mexico needed to cover transboundary networks. Each identifier is defined by a headwater location, an outlet location, and a network dataset in which the path between them can be traced.
 
 ## Start here
 
-If you have a location and want its mainstem, see [Find the mainstem for a place](using/find.md). If you maintain a dataset and want to reference it to rivers, see [Link your data to a mainstem](using/link.md). If you already have mainstem identifiers and want geometry, network paths, or other people's data on the same river, see [Work with data linked to mainstems](using/linked-data.md).
-
-For the underlying model — what a mainstem is and why the identifier is separated from the geometry — start with [What a mainstem is](concepts/mainstems.md).
+- **Find:** If you have a location and want its mainstem, see [Find the mainstem for a place](using/find.md). 
+- **Link:** If you maintain a dataset and want to reference it to rivers, see [Link your data to a mainstem](using/link.md). 
+- **Discover:** If you already have mainstem identifiers and want geometry, network paths, or other people's data on the same river, see [Work with data linked to mainstems](using/linked-data.md).
+- **Understand:** For the underlying model — what a mainstem is and why the identifier is separated from the geometry — start with [What a mainstem is](concepts/mainstems.md).
 
 ## What this manual covers
 
-Reference mainstems is one collection among several published as geoconnex reference features. The identifier policy shared by all of them — an identifier is unique, permanent, never reused, never removed — and the resolution architecture behind it are documented once, in [Reference Features](https://docs.geoconnex.us/reference/reference_features). This manual covers what is specific to mainstems: how the collection decides what gets an identifier, how representations improve, how supersession is handled, what the data products contain, and how to work with rivers rather than reference features in general.
+Reference mainstems is one collection among several published as geoconnex reference features. The identifier policy shared by all of them — an identifier is unique, permanent, never reused, never removed — and the resolution architecture behind it are documented at [Reference Features](https://docs.geoconnex.us/reference/reference_features). This manual covers only what is specific to mainstems: how decisions are made to add an identifier to the collection, how representations may br improved over time, how supersession of mainstems found to be in error is handled, what published data tables contain, and how to work with mainstems specifically rather than reference features in general.
 
-It assumes good documentation exists elsewhere for the systems it connects to and points there rather than restating them: the [NHDPlus](https://www.epa.gov/waterdata/get-nhdplus-national-hydrography-dataset-plus-data) and [3D Hydrography Program](https://www.usgs.gov/3d-hydrography-program) datasets, the [geoconnex](https://docs.geoconnex.us/) system, the [NLDI](https://api.water.usgs.gov/nldi/swagger-ui/index.html) navigation service, and the [nhdplusTools](https://doi-usgs.github.io/nhdplusTools/) and [hydroloom](https://doi-usgs.github.io/hydroloom/) R packages.
+This manyal relies on documentation that exists elsewhere and points there rather than restating them: the [NHDPlus](https://www.epa.gov/waterdata/get-nhdplus-national-hydrography-dataset-plus-data) and [3D Hydrography Program](https://www.usgs.gov/3d-hydrography-program) datasets, the [geoconnex](https://docs.geoconnex.us/) system, the [NLDI](https://api.water.usgs.gov/nldi/swagger-ui/index.html) navigation service, and the [hydrogeofetch](https://doi-usgs.github.io/nhdplusTools/) and [hydroloom](https://doi-usgs.github.io/hydroloom/) R packages.
 
-## Citation
+## More Information:
 
 > David L Blodgett, 2025, Mainstem Rivers of the Conterminous United States (Version 3.0): U.S. Geological Survey data release, <https://doi.org/10.5066/P13LNDDQ>.
 

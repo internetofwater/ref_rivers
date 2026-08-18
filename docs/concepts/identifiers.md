@@ -8,23 +8,25 @@ curl -L "https://geoconnex.us/ref/mainstems/2259484?f=jsonld"  # JSON-LD (RDF)
 curl -L "https://geoconnex.us/ref/mainstems/2259484?f=html"    # HTML
 ```
 
-An `Accept` header works the same way and survives the redirect, so a linked data client needs no query parameter:
+Each of those works in a browser as well: [GeoJSON](https://geoconnex.us/ref/mainstems/2259484?f=json), [JSON-LD](https://geoconnex.us/ref/mainstems/2259484?f=jsonld), [HTML](https://geoconnex.us/ref/mainstems/2259484?f=html).
+
+An `Accept` header works the same way and pases through the redirect:
 
 ```bash
 curl -L -H "Accept: application/ld+json" "https://geoconnex.us/ref/mainstems/2259484"
 ```
 
-The resolution architecture, the rule against referencing landing-content URLs, and the identifier policy shared by all reference collections are documented in [Reference Features](https://docs.geoconnex.us/reference/reference_features). What follows is specific to mainstems.
+The geoconnex uri resolution architecture and the identifier policy shared by all reference collections are documented in [Reference Features](https://docs.geoconnex.us/reference/reference_features). What follows is specific to mainstems.
 
 ## The integer is opaque
 
-The number at the end derives from the level path identifier of the dataset that originated the mainstem. Do not parse it, and do not expect it to work as a level path identifier anywhere else.
+The number at the end derives from the level path identifier of the dataset that originated the mainstem. It should not be parsed, and it will not work as a level path identifier anywhere else.
 
-The distinction matters more than it looks. An NHDPlus level path is a grouping attribute, not an identifier: it is tied to the hydrologic sequence numbering of the network and changes whenever that numbering changes, and the choice of which upstream branch continues the path is sensitive to flowline names and to how densely the network is mapped. A mainstem identifier is minted once against a headwater and an outlet and then held fixed, which is exactly the property a level path does not have.
+A "level path" is a grouping attribute, not an identifier: it is tied to the hydrologic sequence numbering (topological sort) of the network and changes whenever that numbering changes, and the choice of which upstream branch continues the path is sensitive to flowline names and to how densely the network is mapped. A mainstem identifier is minted once against a headwater and an outlet and then held fixed.
 
 ## What resolves, and what it links to
 
-A mainstem description carries the attributes documented in [Mainstem attributes](../reference/attributes.md), a simplified geometry for display, and links out in two directions. Head and outlet identifiers in each hydrography system point down to the network the mainstem is composed of. `downstream_mainstem_id` and `encompassing_mainstem_basins` point across to other mainstems, so the basin hierarchy can be walked from any starting point without a separate topology dataset.
+A mainstem description carries the attributes documented in [Mainstem attributes](../reference/attributes.md). Head and outlet identifiers in each hydrography system point to the network the mainstem can be composed of. `downstream_mainstem_id` and `encompassing_mainstem_basins` point to other mainstems, so the basin hierarchy can be walked from any starting point without a separate topology dataset.
 
 ## Querying the collection
 
@@ -32,12 +34,14 @@ The mainstems collection supports the standard OGC API - Features access pattern
 
 ```bash
 # by bounding box
-curl "https://reference.geoconnex.us/collections/mainstems/items?bbox=-89.5,42.9,-89.2,43.2&f=json"
+curl "https://reference.geoconnex.us/collections/mainstems/items?bbox=-89.5,42.9,-89.2,43.2"
 
 # by name
-curl "https://reference.geoconnex.us/collections/mainstems/items?name_at_outlet=Yahara%20River&f=json"
+curl "https://reference.geoconnex.us/collections/mainstems/items?name_at_outlet=Yahara%20River"
 ```
 
-Every published attribute is queryable; the authoritative list is at `https://reference.geoconnex.us/collections/mainstems/queryables`, and collection metadata including the full schema is at `https://reference.geoconnex.us/collections/mainstems`.
+In a browser: [by bounding box](https://reference.geoconnex.us/collections/mainstems/items?bbox=-89.5,42.9,-89.2,43.2), [by name](https://reference.geoconnex.us/collections/mainstems/items?name_at_outlet=Yahara%20River).
 
-Two mainstem collections are served. `mainstems` is what a mainstem identifier resolves to and what the geoconnex crawler attaches datasets to; it carries the v2-era subset of the schema. `mainstems_v3` carries the full v3 schema, including `primary_name` and the NHDPlusHR and NHD permanent identifier pairs. See [Mainstem attributes](../reference/attributes.md).
+Every published attribute is queryable; the authoritative list is at [`/collections/mainstems/queryables`](https://reference.geoconnex.us/collections/mainstems/queryables), and collection metadata including the full schema is at [`/collections/mainstems`](https://reference.geoconnex.us/collections/mainstems).
+
+As of 8/2026, two mainstem collections are available. `mainstems` is what a mainstem identifier resolves to and what the geoconnex crawler attaches datasets to; it carries the v2-era subset of the schema. `mainstems_v3` carries the full v3 schema, including `primary_name` and the NHDPlusHR and NHD permanent identifier pairs. See [Mainstem attributes](../reference/attributes.md). `mainstems_v3` content will be available at the `maintems` endpoint soon and the temorary `v3` collection will be retired.

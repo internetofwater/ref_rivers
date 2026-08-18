@@ -47,4 +47,4 @@ Both crosswalks cover active mainstems only and assign each flowline to exactly 
 
 ## Review outputs
 
-`data/review/` carries artifacts for people checking a release rather than consuming it: `deprecated_v3.geojson` and `deprecated_lookup.csv` for superseded mainstems and their replacements, `changelog_v3.csv` for mainstems whose headwater or outlet moved more than 10 km, and `missing_reference_mainstems.csv`.
+`data/review/` carries files for people checking a release rather than consuming it: `deprecated_v3.geojson` and `deprecated_lookup.csv` for superseded mainstems and their replacements, `changelog_v3.csv` for mainstems whose headwater or outlet moved more than 10 km, and `missing_reference_mainstems.csv`.
