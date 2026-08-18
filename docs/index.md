@@ -25,5 +25,8 @@ The logical model is documented in OGC Engineering Report 25-045, [Logical data 
 
 > Blodgett, D., Johnson, J.M., Sondheim, M., Wieczorek, M., and Frazier, N., 2021, Mainstems: A logical data model implementing mainstem and drainage basin feature types based on WaterML2 Part 3: HY Features concepts: Environmental Modelling & Software, v. 135, p. 104927, <https://doi.org/10.1016/j.envsoft.2020.104927>.
 
-!!! warning "Provisional"
+!!! "Provisional"
     This information is preliminary or provisional and is subject to revision. It has not received final approval by the U.S. Geological Survey.
+
+!!! AI Assisted Content. 
+    This users manual was generated as a summary of referenced web pages and reports. All content was reviewed and edited for accuracy by dblodgett@usgs.gov prior to sharing.
