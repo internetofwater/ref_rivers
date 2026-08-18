@@ -21,7 +21,7 @@ These are the columns of `mainstems.gpkg` and the properties served by `referenc
 ['https://www.opengis.net/def/schema/hy_features/hyf/HY_FlowPath', 'https://www.opengis.net/def/schema/hy_features/hyf/HY_WaterBody']
 ```
 
-A mainstem is composed of flowlines, and a flowline satisfies the [waterbody-flowpath constraint of the hydrographic network](https://docs.ogc.org/is/14-111r6/14-111r6.html#_hydrographic_network_2) — it is at once a flow path and a linear representation of a (atleast some times) flowing body of water. A polygonal waterbody is a separate feature type in the logical model and is not what this attribute refers to.
+A mainstem is composed of flowlines, and a flowline satisfies the [waterbody-flowpath constraint of the hydrographic network](https://docs.ogc.org/is/14-111r6/14-111r6.html#_hydrographic_network_2) — it is at once a flow path and a linear representation of an (at least some times) flowing body of water. A polygonal waterbody is a separate feature type in the logical model and is not what this attribute refers to.
 
 ## Topology
 

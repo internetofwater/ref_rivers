@@ -10,7 +10,7 @@ curl -L "https://geoconnex.us/ref/mainstems/2259484?f=html"    # HTML
 
 Each of those works in a browser as well: [GeoJSON](https://geoconnex.us/ref/mainstems/2259484?f=json), [JSON-LD](https://geoconnex.us/ref/mainstems/2259484?f=jsonld), [HTML](https://geoconnex.us/ref/mainstems/2259484?f=html).
 
-An `Accept` header works the same way and pases through the redirect:
+An `Accept` header works the same way and passes through the redirect:
 
 ```bash
 curl -L -H "Accept: application/ld+json" "https://geoconnex.us/ref/mainstems/2259484"
@@ -44,4 +44,4 @@ In a browser: [by bounding box](https://reference.geoconnex.us/collections/mains
 
 Every published attribute is queryable; the authoritative list is at [`/collections/mainstems/queryables`](https://reference.geoconnex.us/collections/mainstems/queryables), and collection metadata including the full schema is at [`/collections/mainstems`](https://reference.geoconnex.us/collections/mainstems).
 
-As of 8/2026, two mainstem collections are available. `mainstems` is what a mainstem identifier resolves to and what the geoconnex crawler attaches datasets to; it carries the v2-era subset of the schema. `mainstems_v3` carries the full v3 schema, including `primary_name` and the NHDPlusHR and NHD permanent identifier pairs. See [Mainstem attributes](../reference/attributes.md). `mainstems_v3` content will be available at the `maintems` endpoint soon and the temorary `v3` collection will be retired.
+As of 8/2026, two mainstem collections are available. `mainstems` is what a mainstem identifier resolves to and what the geoconnex crawler attaches datasets to; it carries the v2-era subset of the schema. `mainstems_v3` carries the full v3 schema, including `primary_name` and the NHDPlusHR and NHD permanent identifier pairs. See [Mainstem attributes](../reference/attributes.md). `mainstems_v3` content will be available at the `mainstems` endpoint soon and the temporary `v3` collection will be retired.

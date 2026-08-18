@@ -14,7 +14,7 @@ The omission is deliberate on the reference side. Position along a river is the 
 
 ## Choosing the right mainstem
 
-Every location should get one mainstem and only one. Point features take the mainstem of the flowline they sit on, resolved through the COMID or NHDPlusHR crosswalk rather than by nearest-line distance. At a confluence, the location could belong to the receiving mainstem or the tributary. In cases where a site's position is uncertain relative to a recieving / tributary pair, additional evidence such as name or drainage area is often needed.
+Every location should get one mainstem and only one. Point features take the mainstem of the flowline they sit on, resolved through the COMID or NHDPlusHR crosswalk rather than by nearest-line distance. At a confluence, the location could belong to the receiving mainstem or the tributary. In cases where a site's position is uncertain relative to a receiving / tributary pair, additional evidence such as name or drainage area is often needed.
 
 Features that span a river — a reach assessment, a segment-based model output — take the mainstem of the segments they cover. Where they cross a confluence such that more than one mainstem applies, more than one link can be recorded rather than picking the larger river.
 
@@ -24,7 +24,7 @@ Polygon features on the water follow the same one-mainstem rule with a tiebreake
 
 Re-check your links against each minor release. The work is a filter on `superseded` and a follow of `new_mainstemid`, described in [Persistence and change](../concepts/persistence.md). Between releases nothing needs to happen.
 
-Tools that to automate mainstem identifier maintenance will be made available in the future.
+Tools that automate mainstem identifier maintenance will be made available in the future.
 
 ## Publishing links through geoconnex
 

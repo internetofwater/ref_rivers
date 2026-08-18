@@ -44,7 +44,7 @@ ms = gcx.bygeometry(basin.to_crs(4326).union_all(), predicate="within")
 
 ## hydro_snap
 
-[hydro_snap](https://code.usgs.gov/wma/nhgf/reference-fabric/hydro_snap) assigns mainstem URIs to site locations and lets an analyst check the result by eye. It takes a table of coordinates — gages, monitoring locations, facilities discharging to streams — snaps each to an NHDPlusV2.1 flowline by point-in-catchment join, and returns `comid`, `gnis_name`, and the mainstem URI for every site. An R Shiny map interface then steps through them so the assignment can be accepted, corrected by clicking a different flowline, or set null where no flowline is right.
+[hydro_snap](https://code.usgs.gov/wma/nhgf/reference-fabric/hydro_snap) assigns mainstem URIs to site locations and lets an analyst check the result by eye. It takes a table of coordinates — gages, monitoring locations, facilities discharging to streams — snaps each to an NHDPlusV2.1 flowline by point-in-catchment join, and returns `comid`, `gnis_name`, and the mainstem URI for every site. An R Shiny map interface then steps through them so the assignment can be accepted, corrected by clicking a different flowline, or set null where no flowline is correct.
 
 hydro_snap supports the hand review described in [Link your data to a mainstem](../using/link.md)/
 
