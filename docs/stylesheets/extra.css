@@ -1,0 +1,84 @@
+/* Geoconnex visual language ported to MkDocs Material.
+   Mirrors the palette used by the geoconnexr pkgdown site
+   (https://github.com/internetofwater/docs.geoconnex.us):
+   blue #3578e5, ink #001220, Infima-derived greys, pill buttons. */
+
+:root {
+  --gx-blue: #3578e5;
+  --gx-blue-dark: #1751af;
+  --gx-blue-light: #80aaef;
+  --gx-ink: #001220;
+  --gx-grey: #606770;
+  --gx-surface-dark: #1e2125;
+  --gx-nav-dark: #121212;
+}
+
+/* Light scheme */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: var(--gx-blue);
+  --md-primary-fg-color--light: var(--gx-blue-light);
+  --md-primary-fg-color--dark: var(--gx-blue-dark);
+  --md-accent-fg-color: var(--gx-blue-dark);
+  --md-typeset-a-color: var(--gx-blue);
+  --md-code-bg-color: #f6f7f8;
+  --md-code-fg-color: var(--gx-ink);
+}
+
+/* Dark scheme (Material "slate") */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: var(--gx-blue);
+  --md-primary-fg-color--light: var(--gx-blue-light);
+  --md-primary-fg-color--dark: var(--gx-blue-dark);
+  --md-accent-fg-color: var(--gx-blue-light);
+  --md-typeset-a-color: var(--gx-blue-light);
+  --md-default-bg-color: var(--gx-surface-dark);
+}
+
+/* Header/nav treatment echoing the pkgdown navbar */
+.md-header {
+  border-bottom: 1px solid rgba(53, 120, 229, 0.12);
+  box-shadow: 0 1px 2px rgba(0, 18, 32, 0.08);
+}
+[data-md-color-scheme="slate"] .md-header {
+  background-color: var(--gx-nav-dark);
+}
+
+/* Brand mark sizing to match the geoconnexr logo footprint */
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+  height: 1.8rem;
+  width: auto;
+}
+
+/* Pill buttons (btn-border-radius: 999px in the pkgdown bslib config) */
+.md-typeset .md-button {
+  border-radius: 999px;
+  font-weight: 700;
+}
+.md-typeset .md-button--primary {
+  background-color: var(--gx-blue);
+  border-color: var(--gx-blue);
+}
+.md-typeset .md-button--primary:hover {
+  background-color: var(--gx-blue-dark);
+  border-color: var(--gx-blue-dark);
+}
+
+/* Rounded corners echoing border-radius: 0.4rem */
+.md-typeset code,
+.md-typeset pre > code,
+.md-typeset .admonition {
+  border-radius: 0.4rem;
+}
+
+/* Note/info admonition accent -> Geoconnex blue, like the .gx-status callout */
+.md-typeset .admonition.note,
+.md-typeset .admonition.info,
+.md-typeset details.note,
+.md-typeset details.info {
+  border-left-color: var(--gx-blue);
+}
+.md-typeset .note > .admonition-title,
+.md-typeset .info > .admonition-title {
+  background-color: rgba(53, 120, 229, 0.08);
+}
