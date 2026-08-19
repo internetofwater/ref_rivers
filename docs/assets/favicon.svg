@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="geoconnexr">
+  <defs>
+    <linearGradient id="water" x1="12" y1="8" x2="52" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0b3e4b"/>
+      <stop offset="0.58" stop-color="#087f8c"/>
+      <stop offset="1" stop-color="#2f80a3"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#water)"/>
+  <path d="M32 11c-7 10-15 19-15 29a15 15 0 0 0 30 0c0-10-8-19-15-29Z" fill="#fbfdfc" fill-opacity=".94"/>
+  <path d="M23 41c6 3 12 3 18-1" fill="none" stroke="#087f8c" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="24" cy="34" r="2.5" fill="#087f8c"/>
+  <circle cx="40" cy="34" r="2.5" fill="#2f80a3"/>
+  <path d="M26.5 34h11" stroke="#087f8c" stroke-width="2" stroke-linecap="round"/>
+</svg>
