@@ -46,10 +46,10 @@ The registry only grows. New rows are appended for new mainstems and existing ro
 | --- | --- | --- |
 | `out/nhdpv2_lookup.csv` | `uri`, `comid` | NHDPlusV2 COMID to mainstem URI |
 | `out/nhdphr_lookup.csv` | `uri`, `nhdplushr_permid`, `nhdplushr_id` | NHDPlusHR permanent identifier and integer identifier to mainstem URI |
-| `out/nhd_permid_lookup.csv` | `uri`, `permanent_identifier`, `id3dhp` | NHD permanent identifier and 3DHP identifier to mainstem URI, for mainstems outside the conterminous United States |
+| `out/nhd_permid_lookup.csv` | `uri`, `nhd_permid`, `id3dhp` | NHD permanent identifier and 3DHP identifier to mainstem URI |
 | `out/lpv3_lookup.csv` | `uri`, `lp_mainstem_v3` | Mainstem URI to v3 source level path |
 
-All three crosswalks cover active mainstems only and assign each flowline to exactly one mainstem. In the HR crosswalk, assignment runs in stream-level order so that where paths overlap the larger river takes the flowline; a small number of mainstems whose HR footprint falls entirely inside a higher-precedence mainstem get no exclusive HR flowline and resolve through the v2 crosswalk instead. Mainstems outside the conterminous United States appear only in the NHD permanent identifier crosswalk.
+All three crosswalks cover active mainstems only and assign each flowline to exactly one mainstem. In the HR crosswalk, assignment runs in stream-level order so that where paths overlap the larger river takes the flowline; a small number of mainstems whose HR footprint falls entirely inside a higher-precedence mainstem get no exclusive HR flowline and resolve through the v2 crosswalk instead. Mainstems outside the conterminous United States appear only in the NHD permanent identifier crosswalk. Its CONUS rows are republished from the `nhd_3dhp_mainstem_lookup` package of [3dhp_mainstem_ids v1.3](https://code.usgs.gov/wma/nhgf/reference-fabric/3dhp/3dhp_mainstem_ids/-/releases/v1.3), which assigns each NHD flowline through the head of its group in `nhd_3dhp.csv` (<https://doi.org/10.5066/P13LNDDQ>). Identifiers are spelled as in the 2024 NHD release (integers, and GUIDs with or without braces in either case), so read every column as character.
 
 ## Review outputs
 

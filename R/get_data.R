@@ -324,3 +324,39 @@ get_nhd_hu4 <- function() {
     out_path
   }, "", USE.NAMES = FALSE)
 }
+
+get_nhd_3dhp_mainstem_lookup <- function() {
+
+  # nhd_3dhp_mainstem_lookup package from 3dhp_mainstem_ids v1.3
+  # https://code.usgs.gov/wma/nhgf/reference-fabric/3dhp/3dhp_mainstem_ids/-/releases/v1.3
+  #
+  # NHD flowline (id3dhp, nhd_permid) to ref_rivers v3.2 mainstem, CONUS only.
+
+  sha256sum <- "5d1396cd234de3ad0592789f8d59a8b422fb4b78a970a860d778f53bcfe3065d"
+
+  out_path <- "data/nhd_3dhp_lookup/nhd_3dhp_mainstem_lookup.csv"
+
+  if(!file.exists(out_path)) {
+
+    dir.create(dirname(out_path), recursive = TRUE, showWarnings = FALSE)
+
+    out_zip <- paste0(tools::file_path_sans_ext(out_path), ".zip")
+
+    if(!file.exists(out_zip)) {
+      url <- paste0("https://code.usgs.gov/api/v4/projects/20552/packages/generic/",
+                    "nhd_3dhp_mainstem_lookup/1.3/nhd_3dhp_mainstem_lookup.zip")
+
+      f <- httr::GET(url, httr::write_disk(out_zip))
+
+      if(!f$status_code == 200) stop("error downloading")
+    }
+
+    hash <- tools::sha256sum(out_zip)
+
+    if(sha256sum != hash) stop("hash doesn't match")
+
+    zip::unzip(out_zip, exdir = dirname(out_path), junkpaths = TRUE)
+  }
+
+  out_path
+}

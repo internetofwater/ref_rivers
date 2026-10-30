@@ -100,27 +100,27 @@ make_oconus_mainstems <- function(batch, id_table) {
 #' @param registry path to `nhd_final_registry.csv`.
 #' @param id_table path to `registry/oconus_ids.csv`.
 #'
-#' @return data.frame with `uri`, `permanent_identifier`, `id3dhp`.
+#' @return data.frame with `uri`, `nhd_permid`, `id3dhp`.
 build_nhd_permid_lookup <- function(membership, registry, id_table) {
   ids <- readr::read_csv(id_table, col_types = "iccc")
 
-  mem <- data.table::fread(membership, colClasses = "character",
+  mem <- data.table::fread(membership, colClasses = "character", na.strings = "",
                            col.names = c("permanent_identifier", "usgs_mainstem"))
   mem <- mem[mem$usgs_mainstem %in% ids$usgs_mainstem, ]
 
   reg <- data.table::fread(registry, select = c("permanent_identifier", "id3dhp"),
-                           colClasses = "character")
+                           colClasses = "character", na.strings = "")
   reg <- reg[reg$permanent_identifier %in% mem$permanent_identifier, ]
 
   out <- data.frame(
     uri = paste0("https://geoconnex.us/ref/mainstems/",
                  ids$mainstem[match(mem$usgs_mainstem, ids$usgs_mainstem)]),
-    permanent_identifier = mem$permanent_identifier,
+    nhd_permid = mem$permanent_identifier,
     id3dhp = reg$id3dhp[match(mem$permanent_identifier, reg$permanent_identifier)],
     stringsAsFactors = FALSE)
 
   stopifnot(setequal(unique(mem$usgs_mainstem), ids$usgs_mainstem))
-  stopifnot(!any(duplicated(out$permanent_identifier)), !anyNA(out$id3dhp))
+  stopifnot(!any(duplicated(out$nhd_permid)), !anyNA(out$id3dhp))
 
   out
 }

@@ -56,6 +56,7 @@ list(
                                                        oconus_network, oconus_nonnetwork)),
   tar_target(oconus_batch, build_oconus_batch(oconus_selection, oconus_members, nhd_flowlines,
                                               oconus_network, nhd_hu4)),
+  tar_target(conus_permid_lookup, get_nhd_3dhp_mainstem_lookup(), format = "file"),
   tar_target(oconus_lookup, build_nhd_permid_lookup(oconus_membership, nhd_final_registry, oconus_ids_file)),
   tar_target(oconus_mainstems, make_oconus_mainstems(oconus_batch, oconus_ids_file)),
   tar_target(mainstems, rbind(make_mainstems(raw_mainstems), oconus_mainstems)),
@@ -64,7 +65,7 @@ list(
     "out/mainstems.gpkg"
   }, format = "file"),
   tar_target(lookup, write_lookups(mainstems, raw_mainstems, enhd_v3, hr_net,
-                                   oconus_lookup), format = "file"),
+                                   oconus_lookup, conus_permid_lookup), format = "file"),
   tar_target(validate, validate_mainstems(mainstems)),
   tar_target(non_ref_mainstems, make_nonref(
     mainstems = mainstems, 

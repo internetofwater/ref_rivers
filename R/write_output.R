@@ -38,10 +38,12 @@
 #' @param enhd_v3 path to parquet containing enhd v3 network
 #' @param hr_net path to csv with the NHDPlusHR flow network
 #' @param oconus_lookup data.frame from [build_nhd_permid_lookup()] with
-#'   `uri`, `permanent_identifier`, `id3dhp` for the OCONUS mainstems
+#'   `uri`, `nhd_permid`, `id3dhp` for the OCONUS mainstems
+#' @param conus_lookup path to `nhd_3dhp_mainstem_lookup.csv` from
+#'   3dhp_mainstem_ids v1.3 (`id3dhp`, `nhd_permid`, `ref_mainstem_uri`), CONUS
 #'
 write_lookups <- function(mainstems, raw_mainstems, enhd_v3, hr_net,
-                          oconus_lookup) {
+                          oconus_lookup, conus_lookup) {
   enhd <- arrow::read_parquet(enhd_v3)
 
   # streamlevel + levelpath for precedence ordering of the HR crosswalk.
@@ -53,15 +55,28 @@ write_lookups <- function(mainstems, raw_mainstems, enhd_v3, hr_net,
   # only interested in current mainstems
   mainstems <- dplyr::filter(mainstems, !superseded)
 
-  # NHD permanent identifier lookup for mainstems with no NHDPlus representation
+  # NHD permanent identifier lookup: CONUS rows from 3dhp_mainstem_ids v1.3,
+  # OCONUS rows built here for mainstems with no NHDPlus representation
   nhd_only <- mainstems$head_nhdpv2_COMID == "" & mainstems$head_nhdplushr_id == "" &
     mainstems$head_nhd_permid != ""
-  permid_out <- oconus_lookup
-  stopifnot(!any(duplicated(permid_out$permanent_identifier)))
-  stopifnot(setequal(permid_out$uri, mainstems$uri[nhd_only]))
-  # heads and outlets must be spelled exactly as in the release membership
-  stopifnot(all(mainstems$head_nhd_permid[nhd_only] %in% permid_out$permanent_identifier),
-            all(mainstems$outlet_nhd_permid[nhd_only] %in% permid_out$permanent_identifier))
+  stopifnot(setequal(oconus_lookup$uri, mainstems$uri[nhd_only]))
+  # OCONUS heads and outlets must be spelled as in the release membership
+  stopifnot(all(mainstems$head_nhd_permid[nhd_only] %in% oconus_lookup$nhd_permid),
+            all(mainstems$outlet_nhd_permid[nhd_only] %in% oconus_lookup$nhd_permid))
+
+  conus <- data.table::fread(conus_lookup, colClasses = "character", na.strings = "")
+  conus <- data.frame(uri = conus$ref_mainstem_uri, nhd_permid = conus$nhd_permid,
+                      id3dhp = conus$id3dhp)
+  permid_out <- rbind(conus, oconus_lookup[, c("uri", "nhd_permid", "id3dhp")])
+  stopifnot(!anyNA(permid_out), !any(duplicated(permid_out$nhd_permid)),
+            !any(duplicated(permid_out$id3dhp)))
+  stopifnot(all(permid_out$uri %in% mainstems$uri))
+  # every mainstem with an NHD head is present with its head in its own rows.
+  # CONUS outlet_nhd_permid is not checked: about 600 sit on a neighbouring
+  # mainstem's flowline.
+  has_head <- mainstems$head_nhd_permid != ""
+  stopifnot(all(paste(mainstems$uri, mainstems$head_nhd_permid)[has_head] %in%
+                  paste(permid_out$uri, permid_out$nhd_permid)))
 
   mainstems <- mainstems[!nhd_only, ]
 

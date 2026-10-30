@@ -14,7 +14,7 @@ A usgs mainstem is selected, using NHD names and lengths, if it:
 Mainstems that share a flowline with the release's non-network minting are excluded (this removed Canal Moca, Puerto Rico). American Samoa has no named NHD flowlines.
 
 - Identifiers 3000001 to 3001318 are assigned in domain, then usgs integer, order. `registry/oconus_ids.csv` maps each to its usgs mainstem.
-- New crosswalk `nhd_permid_lookup.csv` maps NHD permanent identifier and 3DHP identifier to mainstem uri.
+- New crosswalk `nhd_permid_lookup.csv` (`uri`, `nhd_permid`, `id3dhp`) maps NHD permanent identifier and 3DHP identifier to mainstem uri for 851,502 mainstems. CONUS rows are republished from `nhd_3dhp_mainstem_lookup` in 3dhp_mainstem_ids v1.3 (https://code.usgs.gov/wma/nhgf/reference-fabric/3dhp/3dhp_mainstem_ids/-/releases/v1.3).
 - Transboundary rivers carry their Canadian NHD reaches (the Yukon River is about 2,515 km). `primary_name_gnis_id` comes from U.S. reaches where there are any.
 - Geometry is simplified to 50 m for display.
 
