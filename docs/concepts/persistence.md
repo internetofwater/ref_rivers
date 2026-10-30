@@ -37,6 +37,8 @@ Versions take the form major.minor.patch.
 | v3 | Jan 2026 | 818,908 mainstems added; 33,745 v2 mainstems retained; NHDPlusHR adopted as source geometry in 39 transboundary four-digit hydrologic units (HU04). |
 | v3.1 | 2026 | Mainstem-to-NHDPlusHR lookup added; 15 mainstems superseded in post-release validation. |
 | v3.2 | 2026 | HR lookup corrections, cross-region and cross-domain outlet fixes, added validation checks. |
+| v3.3 | Jul 2026 | NHDPlusHR lookup extended from the transboundary HU04s to every mainstem with an NHDPlusHR representation; no other artifact changed. |
+| v3.4 | 2026 | First mainstems outside the conterminous United States: 1,318 in Alaska, Hawaii, Puerto Rico and the U.S. Virgin Islands, Guam and the Northern Mariana Islands, defined by NHD permanent identifiers (provider 5). |
 
 Full detail is in [NEWS.md](https://github.com/internetofwater/ref_rivers/blob/main/NEWS.md).
 

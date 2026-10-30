@@ -44,12 +44,27 @@ list(
      reconciled_mainstems
   )),
   tar_target(lp_v3_lookup, write_lp_v3_lookup(raw_mainstems, "out/lpv3_lookup.csv"), format = "file"),
-  tar_target(mainstems, make_mainstems(raw_mainstems)),
+  tar_target(oconus_ids_file, "registry/oconus_ids.csv", format = "file"),
+  tar_target(oconus_membership, get_nhd_3dhp_release("nhd_3dhp_oconus_mainstems"), format = "file"),
+  tar_target(oconus_network, get_nhd_3dhp_release("nhd_3dhp_oconus_flownetwork"), format = "file"),
+  tar_target(oconus_nonnetwork, get_nhd_3dhp_release("nhd_3dhp_nonnetwork_mainstems"), format = "file"),
+  tar_target(nhd_final_registry, get_nhd_3dhp_release("nhd_final_registry"), format = "file"),
+  tar_target(nhd_hu4, get_nhd_hu4(), format = "file"),
+  tar_target(nhd_flowlines, read_nhd_flowlines(nhd_hu4)),
+  tar_target(oconus_members, read_oconus_members(oconus_membership, nhd_final_registry)),
+  tar_target(oconus_selection, select_oconus_mainstems(nhd_flowlines, oconus_members,
+                                                       oconus_network, oconus_nonnetwork)),
+  tar_target(oconus_batch, build_oconus_batch(oconus_selection, oconus_members, nhd_flowlines,
+                                              oconus_network, nhd_hu4)),
+  tar_target(oconus_lookup, build_nhd_permid_lookup(oconus_membership, nhd_final_registry, oconus_ids_file)),
+  tar_target(oconus_mainstems, make_oconus_mainstems(oconus_batch, oconus_ids_file)),
+  tar_target(mainstems, rbind(make_mainstems(raw_mainstems), oconus_mainstems)),
   tar_target(mainstem_gpkg, {
     sf::write_sf(mainstems, "out/mainstems.gpkg", "mainstems")
     "out/mainstems.gpkg"
   }, format = "file"),
-  tar_target(lookup, write_lookups(mainstems, raw_mainstems, enhd_v3, hr_net), format = "file"),
+  tar_target(lookup, write_lookups(mainstems, raw_mainstems, enhd_v3, hr_net,
+                                   oconus_lookup), format = "file"),
   tar_target(validate, validate_mainstems(mainstems)),
   tar_target(non_ref_mainstems, make_nonref(
     mainstems = mainstems, 

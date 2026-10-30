@@ -16,17 +16,20 @@ build_registry <- function(ms, registry, providers) {
 
   ms_id <- gsub("https://geoconnex.us/ref/mainstems/", "", ms$uri)
   
+  # NHDPlusV2 where present, then NHDPlusHR, then the NHD permanent identifier
+  # (OCONUS rows, provider 5).
   head_id <- ifelse(ms$head_nhdpv2_COMID != "",
     gsub("https://geoconnex.us/nhdplusv2/comid/", "", ms$head_nhdpv2_COMID),
-    ms$head_nhdplushr_id
+    ifelse(ms$head_nhdplushr_id != "", ms$head_nhdplushr_id, ms$head_nhd_permid)
   )
 
   out_id <- ifelse(ms$outlet_nhdpv2_COMID != "", 
     gsub("https://geoconnex.us/nhdplusv2/comid/", "", ms$outlet_nhdpv2_COMID), 
-    ms$outlet_nhdplushr_id
+    ifelse(ms$outlet_nhdplushr_id != "", ms$outlet_nhdplushr_id, ms$outlet_nhd_permid)
   )
 
-  provider <- ifelse(ms$head_nhdpv2_COMID != "", 3, 4)
+  provider <- ifelse(ms$head_nhdpv2_COMID != "", 3,
+                     ifelse(ms$head_nhdplushr_id != "", 4, 5))
 
   # Must all have values
   stopifnot(all(head_id != "" & !is.na(head_id)))
@@ -36,6 +39,8 @@ build_registry <- function(ms, registry, providers) {
     
     stopifnot(pro$provider[pro$id == 3] == "https://doi.org/10.5066/P13IRYTB")
     stopifnot(pro$provider[pro$id == 4] == "https://doi.org/10.5066/P13V7GVY")
+    if (any(provider == 5))
+      stopifnot(pro$provider[pro$id == 5] == "https://doi.org/10.5066/P94H0DAG")
 
     ms$id <- as.integer(ms$id)
     
@@ -48,6 +53,7 @@ build_registry <- function(ms, registry, providers) {
     
     message(paste("adding", sum(provider == 3), "nhdplusv2 rows to registry."))
     message(paste("adding", sum(provider == 4), "nhdplushr rows to registry."))
+    message(paste("adding", sum(provider == 5), "nhd permanent identifier rows to registry."))
 
     stopifnot(!any(duplicated(ms_id)))
     stopifnot(!any(duplicated(head_id)))

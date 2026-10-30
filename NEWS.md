@@ -1,3 +1,32 @@
+reference mainstems v3.4 (DRAFT)
+========================
+
+v3.4 adds 1,318 reference mainstems outside the conterminous United States: Alaska (1,085), Hawaii (109), Puerto Rico and the U.S. Virgin Islands (98), and Guam and the Northern Mariana Islands (26). Existing registry rows and mainstems are unchanged.
+
+Each new mainstem is the flowline set of one `usgs/mainstems` identifier from the NHD-based initial 3DHP network release (https://doi.org/10.5066/P94H0DAG), registered as provider 5. That release was built on the final NHD snapshot, not 3DHP production content, so each new mainstem is the same feature as its usgs mainstem. Head and outlet are NHD permanent identifiers; NHDPlusV2 and NHDPlusHR heads and outlets and outlet drainage area are blank.
+
+A usgs mainstem is selected, using NHD names and lengths, if it:
+
+1. is longer than 50 km in Alaska, 4 km in Guam and the Northern Marianas, or 10 km elsewhere, and more than 90 percent named;
+2. is in Alaska, longer than 100 km and more than 50 percent named; or
+3. is downstream of a selected mainstem.
+
+Mainstems that share a flowline with the release's non-network minting are excluded (this removed Canal Moca, Puerto Rico). American Samoa has no named NHD flowlines.
+
+- Identifiers 3000001 to 3001318 are assigned in domain, then usgs integer, order. `registry/oconus_ids.csv` maps each to its usgs mainstem.
+- New crosswalk `nhd_permid_lookup.csv` maps NHD permanent identifier and 3DHP identifier to mainstem uri.
+- Transboundary rivers carry their Canadian NHD reaches (the Yukon River is about 2,515 km). `primary_name_gnis_id` comes from U.S. reaches where there are any.
+- Geometry is simplified to 50 m for display.
+
+Names and geometry come from the NHD HU4 staged products, with HU4 1903 read from the GeoPackage edition because its FileGDB holds 68,180 of roughly 645,000 flowlines:
+
+> U.S. Geological Survey, 2023-2024, USGS National Hydrography Dataset Best Resolution (NHD) for Hydrological Unit (HU) 4, FileGDB and GeoPackage staged products: https://www.usgs.gov/national-hydrography, accessed from https://prd-tnm.s3.amazonaws.com/index.html?prefix=StagedProducts/Hydrography/NHD/HU4/.
+
+reference mainstems v3.3
+========================
+
+v3.3 replaces `nhdphr_lookup.csv` and nothing else; the other v3.2 artifacts are current for v3.3. The v3.2 lookup covered only mainstems in the transboundary HU04s where NHDPlusHR is the source geometry (#25). The v3.3 lookup is built by navigating the full NHDPlusHR network from each mainstem's head to its outlet, so it covers every mainstem with an NHDPlusHR head and outlet. Where paths overlap, larger rivers (lower streamlevel) take the flowline. A small number of mainstems whose NHDPlusHR path falls entirely inside a larger one get no flowline of their own and resolve through the NHDPlusV2 lookup.
+
 reference mainstems v3.2
 ========================
 

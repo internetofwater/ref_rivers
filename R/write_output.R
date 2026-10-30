@@ -26,14 +26,22 @@
 #' Outputs:
 #' out/nhdphr_lookup.csv
 #' out/nhdpv2_lookup.csv
+#' out/nhd_permid_lookup.csv
+#'
+#' Mainstems with no NHDPlusV2 and no NHDPlusHR representation (OCONUS
+#' mainstems) are left out of the v2 and HR
+#' crosswalks and resolve through the NHD permanent identifier lookup instead.
 #'
 #' @param mainstems sf data.frame from workflow (cleaned mainstems)
 #' @param raw_mainstems sf data.frame from workflow carrying `level` (streamlevel)
 #'   and `lp_mainstem_v3` used to order HR assignment
 #' @param enhd_v3 path to parquet containing enhd v3 network
 #' @param hr_net path to csv with the NHDPlusHR flow network
+#' @param oconus_lookup data.frame from [build_nhd_permid_lookup()] with
+#'   `uri`, `permanent_identifier`, `id3dhp` for the OCONUS mainstems
 #'
-write_lookups <- function(mainstems, raw_mainstems, enhd_v3, hr_net) {
+write_lookups <- function(mainstems, raw_mainstems, enhd_v3, hr_net,
+                          oconus_lookup) {
   enhd <- arrow::read_parquet(enhd_v3)
 
   # streamlevel + levelpath for precedence ordering of the HR crosswalk.
@@ -44,6 +52,18 @@ write_lookups <- function(mainstems, raw_mainstems, enhd_v3, hr_net) {
 
   # only interested in current mainstems
   mainstems <- dplyr::filter(mainstems, !superseded)
+
+  # NHD permanent identifier lookup for mainstems with no NHDPlus representation
+  nhd_only <- mainstems$head_nhdpv2_COMID == "" & mainstems$head_nhdplushr_id == "" &
+    mainstems$head_nhd_permid != ""
+  permid_out <- oconus_lookup
+  stopifnot(!any(duplicated(permid_out$permanent_identifier)))
+  stopifnot(setequal(permid_out$uri, mainstems$uri[nhd_only]))
+  # heads and outlets must be spelled exactly as in the release membership
+  stopifnot(all(mainstems$head_nhd_permid[nhd_only] %in% permid_out$permanent_identifier),
+            all(mainstems$outlet_nhd_permid[nhd_only] %in% permid_out$permanent_identifier))
+
+  mainstems <- mainstems[!nhd_only, ]
 
   v2_out <- get_v2_lookup(mainstems, enhd)
 
@@ -91,6 +111,7 @@ write_lookups <- function(mainstems, raw_mainstems, enhd_v3, hr_net) {
 
   readr::write_csv(v2_out, "out/nhdpv2_lookup.csv")
   readr::write_csv(hr_out, "out/nhdphr_lookup.csv")
+  readr::write_csv(permid_out, "out/nhd_permid_lookup.csv")
 
   "out/nhdpv2_lookup.csv"
 }
