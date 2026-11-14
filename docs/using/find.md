@@ -40,7 +40,7 @@ curl "https://reference.geoconnex.us/collections/mainstems/items?bbox=-89.45,43.
 
 ## From a COMID or other hydrography identifier
 
-Use the crosswalk tables published with each release. `nhdpv2_lookup.csv` maps every NHDPlusV2 COMID in an active mainstem to that mainstem's URI, and `nhdphr_lookup.csv` does the same for NHDPlusHR identifiers. These are the authoritative crosswalks — a join against them is exact, where a spatial match is not.
+Use the crosswalk tables published with each release. `nhdpv2_lookup.csv` maps every NHDPlusV2 COMID in an active mainstem to that mainstem's URI, `nhdphr_lookup.csv` does the same for NHDPlusHR identifiers, and `nhd_permid_lookup.csv` for NHD permanent identifiers and 3DHP identifiers (`id3dhp`), including mainstems outside the conterminous United States. These are the authoritative crosswalks — a join against them is exact, where a spatial match is not.
 
 ```r
 lookup <- readr::read_csv("nhdpv2_lookup.csv")

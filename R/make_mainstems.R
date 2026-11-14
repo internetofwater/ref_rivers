@@ -525,8 +525,9 @@ validate_mainstems <- function(ms_out) {
   active <- ms_out[!ms_out$superseded, ]
   has_v2 <- active$head_nhdpv2_COMID != "" & active$outlet_nhdpv2_COMID != ""
   has_hr <- active$head_nhdplushr_id != "" & active$outlet_nhdplushr_id != ""
-  check(all(has_v2 | has_hr),
-        "Non-superseded rows must have at least one head/outlet ID pair (v2 or HR)")
+  has_permid <- active$head_nhd_permid != "" & active$outlet_nhd_permid != ""
+  check(all(has_v2 | has_hr | has_permid),
+        "Non-superseded rows must have at least one head/outlet ID pair (v2, HR or NHD permid)")
 
   # ── URI Pattern Checks ─────────────────────────────────────────────────────
 
