@@ -1171,6 +1171,70 @@ add_hr_mainstems <- function(ms_out, new_net, nhdphr_source_extra, changes) {
   # use update here so we get anything that's out of sync with the new_net updated and correct
   ms_out <- dplyr::rows_update(as.data.frame(ms_out), hr_head_patch, by = "lp_mainstem_v3", unmatched = "ignore") |> sf::st_sf()
 
+  ms_out <- fix_hr_replace_names(ms_out, new_net, changes)
+
+  ms_out
+}
+
+#' Recompute Names for Reviewed NHDPlusHR Replacements
+#'
+#' Replacement rows listed in the changelog had their path changed in review,
+#' but the v3 summary carries their v2 names. Takes the name nearest the
+#' outlet and the name covering the most length from the \code{new_net}
+#' flowlines on each path. \code{new_net} has no GNIS ids, so an id is kept
+#' only where its name is unchanged.
+#'
+#' @param ms_out \code{sf} data frame from [add_hr_mainstems()].
+#' @param new_net Reference network with \code{topo_sort}, \code{gnis_name}
+#'   and \code{length_km}.
+#' @param changes Named list of change-set data frames.
+#'
+#' @return \code{ms_out} with \code{name_at_outlet}, \code{common_GNIS_NAME},
+#'   their GNIS ids and \code{outlet_drainagearea_sqkm} updated on the
+#'   reviewed replacement rows.
+fix_hr_replace_names <- function(ms_out, new_net, changes) {
+
+  i <- which(!ms_out$superseded &
+               ms_out$uri %in% changes$changelog$reference_mainstem &
+               ms_out$lp_mainstem_v3 %in% changes$nhdphr_source_replace$lp_mainstem_v3)
+
+  net_names <- filter(sf::st_drop_geometry(new_net), lp_mainstem_v3 %in% ms_out$lp_mainstem_v3[i]) |>
+    mutate(gnis_name = ifelse(gnis_name == "", NA, gnis_name)) |>
+    arrange(desc(topo_sort)) |> # top to bottom, as for outlet_nhdplushr_id
+    group_by(lp_mainstem_v3) |>
+    summarize(outlet_name = last(gnis_name[!is.na(gnis_name)], default = NA),
+              primary_name = {
+                km <- tapply(length_km, gnis_name, sum)
+                if (length(km) == 0) NA_character_ else names(km)[which.max(km)]
+              },
+              # an outlet reach can carry the area of the river or lake it
+              # joins; take the area above a >10x jump in the last two flowlines
+              da = {
+                k <- n()
+                jump <- which(total_da_sqkm[-1] > 10 * total_da_sqkm[-k]) + 1
+                jump <- jump[jump >= k - 1]
+                if (length(jump) == 0) total_da_sqkm[k] else total_da_sqkm[min(jump) - 1]
+              })
+
+  n <- net_names[match(ms_out$lp_mainstem_v3[i], net_names$lp_mainstem_v3), ]
+
+  # NHD has no name on the outlet path; keep what the summary had
+  n$outlet_name <- coalesce(n$outlet_name, ms_out$name_at_outlet[i])
+  n$primary_name <- coalesce(n$primary_name, ms_out$common_GNIS_NAME[i])
+
+  same <- function(a, b) coalesce(a == b, is.na(a) & is.na(b))
+
+  # a headwater extension leaves the outlet name alone; keep the primary name
+  # rather than let a longer reach across the border rename the river
+  keep <- same(n$outlet_name, ms_out$name_at_outlet[i]) & !is.na(ms_out$common_GNIS_NAME[i])
+  n$primary_name[keep] <- ms_out$common_GNIS_NAME[i][keep]
+
+  ms_out$name_at_outlet_gnis_id[i][!same(n$outlet_name, ms_out$name_at_outlet[i])] <- NA
+  ms_out$common_GNIS_ID[i][!same(n$primary_name, ms_out$common_GNIS_NAME[i])] <- NA
+  ms_out$name_at_outlet[i] <- n$outlet_name
+  ms_out$common_GNIS_NAME[i] <- n$primary_name
+  ms_out$outlet_drainagearea_sqkm[i] <- coalesce(round(n$da, digits = 1), ms_out$outlet_drainagearea_sqkm[i])
+
   ms_out
 }
 
